@@ -1,0 +1,92 @@
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class KnowledgeBaseCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=1000)
+
+
+class KnowledgeBaseUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+
+
+class KnowledgeBaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    name: str
+    description: str
+    created_at: str
+    updated_at: str
+
+
+class DocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    knowledge_base_id: str
+    filename: str
+    content_type: str
+    storage_path: str
+    parse_status: str
+    index_status: str
+    error_message: str | None
+    created_at: str
+    updated_at: str
+
+
+class ChunkRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    knowledge_base_id: str
+    document_id: str
+    chunk_index: int
+    text: str
+    source_label: str
+    page_number: int | None
+    section_title: str | None
+    vector_id: str | None
+    created_at: str
+
+
+class DocumentParseResult(BaseModel):
+    document: DocumentRead
+    chunks: list[ChunkRead]
+
+
+class RetrievalRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class RetrievedChunkRead(BaseModel):
+    vector_id: str
+    text: str
+    score: float | None
+    metadata: dict
+
+
+class RetrievalResponse(BaseModel):
+    query: str
+    results: list[RetrievedChunkRead]
+
+
+class QuestionRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+class AnswerSourceRead(BaseModel):
+    citation: int
+    vector_id: str
+    text: str
+    score: float | None
+    metadata: dict
+
+
+class QuestionResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[AnswerSourceRead]

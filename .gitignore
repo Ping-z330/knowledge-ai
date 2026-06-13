@@ -1,2 +1,8 @@
 .superpowers/
-
+.codex
+.codex/
+.env
+__pycache__/
+*.py[cod]
+backend/.venv/
+backend/data/
