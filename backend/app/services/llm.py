@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import json
+import socket
 import urllib.error
 import urllib.request
 
@@ -13,6 +14,56 @@ class LLMError(Exception):
 class LLMProvider:
     def answer(self, *, system_prompt: str, user_prompt: str) -> str:
         raise NotImplementedError
+
+
+def _open_url_without_proxy(
+    request: urllib.request.Request,
+    *,
+    timeout: float,
+) -> object:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(request, timeout=timeout)
+
+
+def _format_error_detail(raw_detail: str) -> str:
+    if not raw_detail.strip():
+        return ""
+
+    try:
+        payload = json.loads(raw_detail)
+    except json.JSONDecodeError:
+        return raw_detail.strip()
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        message = error.get("message")
+        code = error.get("code")
+        error_type = error.get("type")
+        parts = [str(value) for value in (message, code, error_type) if value]
+        return " | ".join(parts)
+
+    if isinstance(error, str):
+        return error
+
+    message = payload.get("message")
+    if isinstance(message, str):
+        return message
+
+    return raw_detail.strip()
+
+
+def _http_status_hint(status_code: int) -> str:
+    if status_code == 401:
+        return "Unauthorized. Check LLM_API_KEY."
+    if status_code == 402:
+        return "Payment required or insufficient balance."
+    if status_code == 404:
+        return "Model or endpoint not found. Check LLM_BASE_URL and LLM_MODEL."
+    if status_code == 429:
+        return "Rate limit exceeded. Retry later or reduce request frequency."
+    if status_code >= 500:
+        return "LLM provider server error. Retry later."
+    return "LLM provider rejected the request."
 
 
 @dataclass(frozen=True)
@@ -60,12 +111,24 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with _open_url_without_proxy(request, timeout=self.timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
-            raise LLMError(f"LLM request failed: {exc.code} {detail}") from exc
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            parsed_detail = _format_error_detail(detail)
+            hint = _http_status_hint(exc.code)
+            suffix = f" {parsed_detail}" if parsed_detail else ""
+            raise LLMError(f"LLM request failed: {exc.code}. {hint}{suffix}") from exc
+        except (TimeoutError, socket.timeout) as exc:
+            raise LLMError("LLM request timed out. Retry or increase provider timeout.") from exc
+        except urllib.error.URLError as exc:
+            reason = getattr(exc, "reason", exc)
+            if isinstance(reason, (TimeoutError, socket.timeout)):
+                raise LLMError(
+                    "LLM request timed out. Retry or increase provider timeout."
+                ) from exc
+            raise LLMError(f"LLM request failed: {reason}") from exc
+        except json.JSONDecodeError as exc:
             raise LLMError(f"LLM request failed: {exc}") from exc
 
         try:
@@ -76,4 +139,3 @@ class OpenAICompatibleLLMProvider(LLMProvider):
         if not isinstance(content, str) or not content.strip():
             raise LLMError("LLM response is empty")
         return content.strip()
-

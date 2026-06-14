@@ -6,6 +6,7 @@ from ..database import connection_scope
 from ..repositories.chunks import ChunkRepository
 from ..repositories.documents import DocumentRepository
 from ..repositories.knowledge_bases import KnowledgeBaseRepository
+from ..repositories.question_answers import QuestionAnswerRepository
 from ..schemas import (
     ChunkRead,
     DocumentParseResult,
@@ -13,6 +14,7 @@ from ..schemas import (
     KnowledgeBaseCreate,
     KnowledgeBaseRead,
     KnowledgeBaseUpdate,
+    QuestionAnswerRead,
     QuestionRequest,
     QuestionResponse,
     RetrievalRequest,
@@ -29,15 +31,27 @@ from ..services.document_storage import (
 from ..services.indexing import IndexingError, index_document_chunks
 from ..services.retrieval import RetrievalError, retrieve_chunks
 
+# 创建API路由器，所有路由都以/api/knowledge-bases为前缀，并且属于knowledge-bases标签
 router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
 
 
+def _source_to_dict(source: object) -> dict:
+    return {
+        "citation": source.citation,
+        "vector_id": source.vector_id,
+        "text": source.text,
+        "score": source.score,
+        "metadata": source.metadata,
+    }
+
+
+# 列出所有知识库
 @router.get("", response_model=list[KnowledgeBaseRead])
 def list_knowledge_bases() -> list[dict]:
     with connection_scope() as connection:
         return KnowledgeBaseRepository(connection).list()
 
-
+# 创建一个新的知识库，接收KnowledgeBaseCreate模型作为请求体，并返回创建的知识库信息，状态码为201 Created
 @router.post(
     "",
     response_model=KnowledgeBaseRead,
@@ -47,7 +61,7 @@ def create_knowledge_base(payload: KnowledgeBaseCreate) -> dict:
     with connection_scope() as connection:
         return KnowledgeBaseRepository(connection).create(payload)
 
-
+# 获取指定ID的知识库信息，如果知识库不存在则返回404 Not Found错误
 @router.get("/{knowledge_base_id}", response_model=KnowledgeBaseRead)
 def get_knowledge_base(knowledge_base_id: str) -> dict:
     with connection_scope() as connection:
@@ -288,17 +302,48 @@ def answer_from_knowledge_base(
     except AnsweringError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    sources = [_source_to_dict(source) for source in result.sources]
+    with connection_scope() as connection:
+        QuestionAnswerRepository(connection).create(
+            knowledge_base_id=knowledge_base_id,
+            question=payload.question,
+            answer=result.answer,
+            sources=sources,
+            top_k=payload.top_k,
+        )
+
     return {
         "question": payload.question,
         "answer": result.answer,
-        "sources": [
-            {
-                "citation": source.citation,
-                "vector_id": source.vector_id,
-                "text": source.text,
-                "score": source.score,
-                "metadata": source.metadata,
-            }
-            for source in result.sources
-        ],
+        "sources": sources,
     }
+
+
+@router.get(
+    "/{knowledge_base_id}/question-answers",
+    response_model=list[QuestionAnswerRead],
+)
+def list_question_answers(knowledge_base_id: str) -> list[dict]:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+        return QuestionAnswerRepository(connection).list_for_knowledge_base(
+            knowledge_base_id,
+        )
+
+
+@router.delete(
+    "/{knowledge_base_id}/question-answers/{answer_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_question_answer(knowledge_base_id: str, answer_id: str) -> Response:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+        deleted = QuestionAnswerRepository(connection).delete(knowledge_base_id, answer_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Question answer not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

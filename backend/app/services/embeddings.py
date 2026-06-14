@@ -15,6 +15,15 @@ class EmbeddingProvider:
         raise NotImplementedError
 
 
+def _open_url_without_proxy(
+    request: urllib.request.Request,
+    *,
+    timeout: float,
+) -> object:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    return opener.open(request, timeout=timeout)
+
+
 @dataclass(frozen=True)
 class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
     base_url: str
@@ -53,7 +62,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+            with _open_url_without_proxy(request, timeout=self.timeout) as response:
                 body = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace")
@@ -73,4 +82,3 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             embeddings.append([float(value) for value in embedding])
 
         return embeddings
-

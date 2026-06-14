@@ -1,6 +1,7 @@
 import unittest
+import io
 import json
-import urllib.request
+import urllib.error
 
 
 class FakeLLMProvider:
@@ -81,9 +82,7 @@ class AnsweringServiceTest(unittest.TestCase):
 
 class LLMProviderTest(unittest.TestCase):
     def test_openai_compatible_provider_parses_answer_content(self) -> None:
-        from app.services.llm import OpenAICompatibleLLMProvider
-
-        original_urlopen = urllib.request.urlopen
+        from app.services import llm
 
         class FakeResponse:
             def __enter__(self) -> "FakeResponse":
@@ -97,21 +96,108 @@ class LLMProviderTest(unittest.TestCase):
                     {"choices": [{"message": {"content": "答案[1]"}}]}
                 ).encode("utf-8")
 
-        def fake_urlopen(request: object, timeout: float) -> FakeResponse:
+        def fake_open_url_without_proxy(
+            request: object,
+            *,
+            timeout: float,
+        ) -> FakeResponse:
             return FakeResponse()
 
-        urllib.request.urlopen = fake_urlopen
+        original_open = llm._open_url_without_proxy
+        llm._open_url_without_proxy = fake_open_url_without_proxy
         try:
-            provider = OpenAICompatibleLLMProvider(
+            provider = llm.OpenAICompatibleLLMProvider(
                 base_url="http://fake/v1",
                 api_key="key",
                 model="model",
             )
             answer = provider.answer(system_prompt="system", user_prompt="user")
         finally:
-            urllib.request.urlopen = original_urlopen
+            llm._open_url_without_proxy = original_open
 
         self.assertEqual(answer, "答案[1]")
+
+    def test_openai_compatible_provider_formats_json_http_errors(self) -> None:
+        from app.services import llm
+
+        def fake_open_url_without_proxy(
+            request: object,
+            *,
+            timeout: float,
+        ) -> object:
+            raise urllib.error.HTTPError(
+                url="http://fake/v1/chat/completions",
+                code=401,
+                msg="Unauthorized",
+                hdrs=None,
+                fp=io.BytesIO(
+                    json.dumps(
+                        {
+                            "error": {
+                                "message": "Invalid API key",
+                                "type": "authentication_error",
+                                "code": "invalid_api_key",
+                            }
+                        }
+                    ).encode("utf-8")
+                ),
+            )
+
+        original_open = llm._open_url_without_proxy
+        llm._open_url_without_proxy = fake_open_url_without_proxy
+        try:
+            provider = llm.OpenAICompatibleLLMProvider(
+                base_url="http://fake/v1",
+                api_key="bad-key",
+                model="model",
+            )
+            with self.assertRaises(llm.LLMError) as context:
+                provider.answer(system_prompt="system", user_prompt="user")
+        finally:
+            llm._open_url_without_proxy = original_open
+
+        message = str(context.exception)
+        self.assertIn("401", message)
+        self.assertIn("Check LLM_API_KEY", message)
+        self.assertIn("Invalid API key", message)
+        self.assertIn("invalid_api_key", message)
+
+    def test_openai_compatible_provider_rejects_empty_content(self) -> None:
+        from app.services import llm
+
+        class FakeResponse:
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *args: object) -> bool:
+                return False
+
+            def read(self) -> bytes:
+                return json.dumps(
+                    {"choices": [{"message": {"content": "   "}}]}
+                ).encode("utf-8")
+
+        def fake_open_url_without_proxy(
+            request: object,
+            *,
+            timeout: float,
+        ) -> FakeResponse:
+            return FakeResponse()
+
+        original_open = llm._open_url_without_proxy
+        llm._open_url_without_proxy = fake_open_url_without_proxy
+        try:
+            provider = llm.OpenAICompatibleLLMProvider(
+                base_url="http://fake/v1",
+                api_key="key",
+                model="model",
+            )
+            with self.assertRaises(llm.LLMError) as context:
+                provider.answer(system_prompt="system", user_prompt="user")
+        finally:
+            llm._open_url_without_proxy = original_open
+
+        self.assertEqual(str(context.exception), "LLM response is empty")
 
 
 if __name__ == "__main__":

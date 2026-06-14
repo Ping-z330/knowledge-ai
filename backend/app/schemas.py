@@ -11,6 +11,7 @@ class KnowledgeBaseUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=1000)
 
 
+# 
 class KnowledgeBaseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -90,3 +91,15 @@ class QuestionResponse(BaseModel):
     question: str
     answer: str
     sources: list[AnswerSourceRead]
+
+
+class QuestionAnswerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    knowledge_base_id: str
+    question: str
+    answer: str
+    sources: list[AnswerSourceRead]
+    top_k: int
+    created_at: str
