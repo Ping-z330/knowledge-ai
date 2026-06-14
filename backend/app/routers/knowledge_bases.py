@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
 
 from ..database import connection_scope
 from ..repositories.chunks import ChunkRepository
@@ -8,8 +8,8 @@ from ..repositories.documents import DocumentRepository
 from ..repositories.knowledge_bases import KnowledgeBaseRepository
 from ..repositories.question_answers import QuestionAnswerRepository
 from ..schemas import (
+    BatchTaskResponse,
     ChunkRead,
-    DocumentParseResult,
     DocumentRead,
     KnowledgeBaseCreate,
     KnowledgeBaseRead,
@@ -28,7 +28,7 @@ from ..services.document_storage import (
     save_upload_file,
     validate_upload_filename,
 )
-from ..services.indexing import IndexingError, index_document_chunks
+from ..services.indexing import IndexingError, delete_document_vectors, index_document_chunks
 from ..services.retrieval import RetrievalError, retrieve_chunks
 
 # 创建API路由器，所有路由都以/api/knowledge-bases为前缀，并且属于knowledge-bases标签
@@ -43,6 +43,79 @@ def _source_to_dict(source: object) -> dict:
         "score": source.score,
         "metadata": source.metadata,
     }
+
+
+def _run_parse_document_task(knowledge_base_id: str, document_id: str) -> None:
+    with connection_scope() as connection:
+        document_repository = DocumentRepository(connection)
+        document = document_repository.get(document_id)
+        if document is None or document["knowledge_base_id"] != knowledge_base_id:
+            return
+
+        try:
+            delete_document_vectors(
+                knowledge_base_id=knowledge_base_id,
+                document_id=document_id,
+            )
+            path = Path(document["storage_path"])
+            if not path.exists():
+                raise DocumentParseError("Uploaded file is missing from storage")
+
+            extracted = parse_document(path, document["filename"])
+            chunks = chunk_document(extracted)
+            if not chunks:
+                raise DocumentParseError("No chunks could be created from document text")
+
+            ChunkRepository(connection).replace_for_document(
+                knowledge_base_id=knowledge_base_id,
+                document_id=document_id,
+                chunks=chunks,
+            )
+            document_repository.update_parse_and_index_status(
+                document_id,
+                parse_status="parsed",
+                index_status="pending",
+                error_message=None,
+            )
+        except (DocumentParseError, IndexingError) as exc:
+            document_repository.update_parse_status(
+                document_id,
+                parse_status="failed",
+                error_message=str(exc),
+            )
+
+
+def _run_index_document_task(knowledge_base_id: str, document_id: str) -> None:
+    with connection_scope() as connection:
+        document_repository = DocumentRepository(connection)
+        chunk_repository = ChunkRepository(connection)
+        document = document_repository.get(document_id)
+        if document is None or document["knowledge_base_id"] != knowledge_base_id:
+            return
+
+        chunks = chunk_repository.list_for_document(document_id)
+        try:
+            delete_document_vectors(
+                knowledge_base_id=knowledge_base_id,
+                document_id=document_id,
+            )
+            result = index_document_chunks(
+                knowledge_base_id=knowledge_base_id,
+                document=document,
+                chunks=chunks,
+            )
+            chunk_repository.set_vector_ids(result.vector_ids_by_chunk_id)
+            document_repository.update_index_status(
+                document_id,
+                index_status="indexed",
+                error_message=None,
+            )
+        except IndexingError as exc:
+            document_repository.update_index_status(
+                document_id,
+                index_status="failed",
+                error_message=str(exc),
+            )
 
 
 # 列出所有知识库
@@ -140,10 +213,22 @@ def upload_document(
 )
 def delete_document(knowledge_base_id: str, document_id: str) -> Response:
     with connection_scope() as connection:
-        deleted = DocumentRepository(connection).delete(knowledge_base_id, document_id)
+        document_repository = DocumentRepository(connection)
+        existing = document_repository.get(document_id)
+        if existing is None or existing["knowledge_base_id"] != knowledge_base_id:
+            raise HTTPException(status_code=404, detail="Document not found")
 
-    if deleted is None:
-        raise HTTPException(status_code=404, detail="Document not found")
+        try:
+            delete_document_vectors(
+                knowledge_base_id=knowledge_base_id,
+                document_id=document_id,
+            )
+        except IndexingError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        deleted = document_repository.delete(knowledge_base_id, document_id)
+        if deleted is None:
+            raise HTTPException(status_code=404, detail="Document not found")
 
     storage_path = Path(deleted["storage_path"])
     if storage_path.exists():
@@ -154,50 +239,61 @@ def delete_document(knowledge_base_id: str, document_id: str) -> Response:
 
 @router.post(
     "/{knowledge_base_id}/documents/{document_id}/parse",
-    response_model=DocumentParseResult,
+    response_model=DocumentRead,
 )
-def parse_uploaded_document(knowledge_base_id: str, document_id: str) -> dict:
+def parse_uploaded_document(
+    knowledge_base_id: str,
+    document_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
         document = document_repository.get(document_id)
         if document is None or document["knowledge_base_id"] != knowledge_base_id:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        path = Path(document["storage_path"])
-        if not path.exists():
-            updated = document_repository.update_parse_status(
-                document_id,
-                parse_status="failed",
-                error_message="Uploaded file is missing from storage",
-            )
-            connection.commit()
-            raise HTTPException(status_code=500, detail=updated["error_message"])
-
-        try:
-            extracted = parse_document(path, document["filename"])
-            chunks = chunk_document(extracted)
-            if not chunks:
-                raise DocumentParseError("No chunks could be created from document text")
-        except DocumentParseError as exc:
-            updated = document_repository.update_parse_status(
-                document_id,
-                parse_status="failed",
-                error_message=str(exc),
-            )
-            connection.commit()
-            raise HTTPException(status_code=400, detail=updated["error_message"]) from exc
-
-        chunk_rows = ChunkRepository(connection).replace_for_document(
-            knowledge_base_id=knowledge_base_id,
-            document_id=document_id,
-            chunks=chunks,
-        )
-        updated = document_repository.update_parse_status(
+        updated = document_repository.update_parse_and_index_status(
             document_id,
-            parse_status="parsed",
+            parse_status="running",
+            index_status="pending",
             error_message=None,
         )
-        return {"document": updated, "chunks": chunk_rows}
+    background_tasks.add_task(_run_parse_document_task, knowledge_base_id, document_id)
+    return updated
+
+
+@router.post(
+    "/{knowledge_base_id}/documents/parse-pending",
+    response_model=BatchTaskResponse,
+)
+def parse_pending_documents(
+    knowledge_base_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+        document_repository = DocumentRepository(connection)
+        documents = document_repository.list_pending_parse(knowledge_base_id)
+        for document in documents:
+            document_repository.update_parse_and_index_status(
+                document["id"],
+                parse_status="running",
+                index_status="pending",
+                error_message=None,
+            )
+            background_tasks.add_task(
+                _run_parse_document_task,
+                knowledge_base_id,
+                document["id"],
+            )
+
+    return {
+        "scheduled": len(documents),
+        "document_ids": [document["id"] for document in documents],
+    }
 
 
 @router.get(
@@ -216,38 +312,58 @@ def list_document_chunks(knowledge_base_id: str, document_id: str) -> list[dict]
     "/{knowledge_base_id}/documents/{document_id}/index",
     response_model=DocumentRead,
 )
-def index_uploaded_document(knowledge_base_id: str, document_id: str) -> dict:
+def index_uploaded_document(
+    knowledge_base_id: str,
+    document_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
-        chunk_repository = ChunkRepository(connection)
 
         document = document_repository.get(document_id)
         if document is None or document["knowledge_base_id"] != knowledge_base_id:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        chunks = chunk_repository.list_for_document(document_id)
-        try:
-            result = index_document_chunks(
-                knowledge_base_id=knowledge_base_id,
-                document=document,
-                chunks=chunks,
-            )
-        except IndexingError as exc:
-            updated = document_repository.update_index_status(
-                document_id,
-                index_status="failed",
-                error_message=str(exc),
-            )
-            connection.commit()
-            raise HTTPException(status_code=400, detail=updated["error_message"]) from exc
-
-        chunk_repository.set_vector_ids(result.vector_ids_by_chunk_id)
-        updated = document_repository.update_index_status(
+        document = document_repository.update_index_status(
             document_id,
-            index_status="indexed",
+            index_status="running",
             error_message=None,
         )
-        return updated
+    background_tasks.add_task(_run_index_document_task, knowledge_base_id, document_id)
+    return document
+
+
+@router.post(
+    "/{knowledge_base_id}/documents/index-pending",
+    response_model=BatchTaskResponse,
+)
+def index_pending_documents(
+    knowledge_base_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+        document_repository = DocumentRepository(connection)
+        documents = document_repository.list_pending_index(knowledge_base_id)
+        for document in documents:
+            document_repository.update_index_status(
+                document["id"],
+                index_status="running",
+                error_message=None,
+            )
+            background_tasks.add_task(
+                _run_index_document_task,
+                knowledge_base_id,
+                document["id"],
+            )
+
+    return {
+        "scheduled": len(documents),
+        "document_ids": [document["id"] for document in documents],
+    }
 
 
 @router.post("/{knowledge_base_id}/retrieve", response_model=RetrievalResponse)

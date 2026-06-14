@@ -57,6 +57,11 @@ class DocumentParseResult(BaseModel):
     chunks: list[ChunkRead]
 
 
+class BatchTaskResponse(BaseModel):
+    scheduled: int
+    document_ids: list[str]
+
+
 class RetrievalRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)

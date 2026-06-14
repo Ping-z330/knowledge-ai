@@ -69,6 +69,18 @@ def index_document_chunks(
     return IndexingResult(vector_ids_by_chunk_id=vector_ids_by_chunk_id)
 
 
+def delete_document_vectors(
+    *,
+    knowledge_base_id: str,
+    document_id: str,
+    vector_store: VectorStore | None = None,
+) -> None:
+    store = vector_store or ChromaVectorStore()
+    try:
+        store.delete_by_document(_collection_name(knowledge_base_id), document_id)
+    except VectorStoreError as exc:
+        raise IndexingError(str(exc)) from exc
+
+
 def _collection_name(knowledge_base_id: str) -> str:
     return "kb_" + knowledge_base_id.replace("-", "_")
-

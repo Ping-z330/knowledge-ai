@@ -270,6 +270,13 @@ h4 {
   font-size: 13px;
 }
 
+.panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .upload-zone {
   margin-bottom: 16px;
 }

@@ -12,11 +12,17 @@ class FakeEmbeddingProvider:
 class FakeVectorStore:
     def __init__(self) -> None:
         self.collection_name: str | None = None
+        self.deleted_collection_name: str | None = None
+        self.deleted_document_id: str | None = None
         self.records = []
 
     def upsert(self, collection_name: str, records: list) -> None:
         self.collection_name = collection_name
         self.records = records
+
+    def delete_by_document(self, collection_name: str, document_id: str) -> None:
+        self.deleted_collection_name = collection_name
+        self.deleted_document_id = document_id
 
 
 class IndexingServiceTest(unittest.TestCase):
@@ -75,6 +81,20 @@ class IndexingServiceTest(unittest.TestCase):
                 embedding_provider=FakeEmbeddingProvider(),
                 vector_store=FakeVectorStore(),
             )
+
+    def test_delete_document_vectors_deletes_from_collection(self) -> None:
+        from app.services.indexing import delete_document_vectors
+
+        vector_store = FakeVectorStore()
+
+        delete_document_vectors(
+            knowledge_base_id="kb-1",
+            document_id="doc-1",
+            vector_store=vector_store,
+        )
+
+        self.assertEqual(vector_store.deleted_collection_name, "kb_kb_1")
+        self.assertEqual(vector_store.deleted_document_id, "doc-1")
 
 
 class IndexingPersistenceTest(unittest.TestCase):
@@ -139,4 +159,3 @@ class IndexingPersistenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

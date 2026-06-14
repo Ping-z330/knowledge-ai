@@ -37,6 +37,53 @@ class DocumentRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_pending_parse(self, knowledge_base_id: str) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT
+                id,
+                knowledge_base_id,
+                filename,
+                content_type,
+                storage_path,
+                parse_status,
+                index_status,
+                error_message,
+                created_at,
+                updated_at
+            FROM documents
+            WHERE knowledge_base_id = ?
+              AND parse_status IN ('uploaded', 'failed')
+            ORDER BY created_at ASC
+            """,
+            (knowledge_base_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_pending_index(self, knowledge_base_id: str) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT
+                id,
+                knowledge_base_id,
+                filename,
+                content_type,
+                storage_path,
+                parse_status,
+                index_status,
+                error_message,
+                created_at,
+                updated_at
+            FROM documents
+            WHERE knowledge_base_id = ?
+              AND parse_status = 'parsed'
+              AND index_status IN ('pending', 'failed')
+            ORDER BY created_at ASC
+            """,
+            (knowledge_base_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def get(self, document_id: str) -> dict | None:
         row = self.connection.execute(
             """
@@ -133,6 +180,28 @@ class DocumentRepository:
             WHERE id = ?
             """,
             (index_status, error_message, _now(), document_id),
+        )
+        return self.get(document_id)
+
+    def update_parse_and_index_status(
+        self,
+        document_id: str,
+        *,
+        parse_status: str,
+        index_status: str,
+        error_message: str | None = None,
+    ) -> dict | None:
+        self.connection.execute(
+            """
+            UPDATE documents
+            SET
+                parse_status = ?,
+                index_status = ?,
+                error_message = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (parse_status, index_status, error_message, _now(), document_id),
         )
         return self.get(document_id)
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
+import { message } from 'ant-design-vue'
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -76,6 +77,8 @@ const loadingDocuments = ref(false)
 const loadingQuestionAnswers = ref(false)
 const creatingKnowledgeBase = ref(false)
 const asking = ref(false)
+const batchParsing = ref(false)
+const batchIndexing = ref(false)
 const busyDocumentId = ref('')
 const busyAnswerId = ref('')
 
@@ -92,6 +95,12 @@ const indexedCount = computed(
   () => documents.value.filter((item) => item.index_status === 'indexed').length,
 )
 
+const hasRunningDocuments = computed(() =>
+  documents.value.some(
+    (item) => item.parse_status === 'running' || item.index_status === 'running',
+  ),
+)
+
 const parsedCount = computed(
   () => documents.value.filter((item) => item.parse_status === 'parsed').length,
 )
@@ -99,7 +108,7 @@ const parsedCount = computed(
 const statusTone = (status: string) => {
   if (status === 'indexed' || status === 'parsed') return 'success'
   if (status === 'failed') return 'error'
-  if (status === 'pending' || status === 'uploaded') return 'processing'
+  if (status === 'pending' || status === 'uploaded' || status === 'running') return 'processing'
   return 'default'
 }
 
@@ -187,7 +196,7 @@ const createKnowledgeBase = async () => {
 
 const uploadProps = computed<UploadProps>(() => ({
   name: 'file',
-  multiple: false,
+  multiple: true,
   showUploadList: false,
   accept: '.pdf,.doc,.docx,.md,.txt',
   action: selectedKnowledgeBaseId.value
@@ -201,8 +210,45 @@ const uploadProps = computed<UploadProps>(() => ({
   },
 }))
 
+type BatchTaskResponse = {
+  scheduled: number
+  document_ids: string[]
+}
+
+const parsePendingDocuments = async () => {
+  if (!selectedKnowledgeBaseId.value) return
+
+  batchParsing.value = true
+  try {
+    const { data } = await api.post<BatchTaskResponse>(
+      `/knowledge-bases/${selectedKnowledgeBaseId.value}/documents/parse-pending`,
+    )
+    message.info(data.scheduled ? `已触发 ${data.scheduled} 个解析任务` : '没有待解析文档')
+    await loadDocuments()
+  } finally {
+    batchParsing.value = false
+  }
+}
+
+const indexPendingDocuments = async () => {
+  if (!selectedKnowledgeBaseId.value) return
+
+  batchIndexing.value = true
+  try {
+    const { data } = await api.post<BatchTaskResponse>(
+      `/knowledge-bases/${selectedKnowledgeBaseId.value}/documents/index-pending`,
+    )
+    message.info(data.scheduled ? `已触发 ${data.scheduled} 个索引任务` : '没有待索引文档')
+    await loadDocuments()
+  } finally {
+    batchIndexing.value = false
+  }
+}
+
 const parseDocument = async (item: DocumentItem) => {
   busyDocumentId.value = item.id
+  item.parse_status = 'running'
+  item.error_message = null
   try {
     await api.post(`/knowledge-bases/${item.knowledge_base_id}/documents/${item.id}/parse`)
     await loadDocuments()
@@ -213,6 +259,8 @@ const parseDocument = async (item: DocumentItem) => {
 
 const indexDocument = async (item: DocumentItem) => {
   busyDocumentId.value = item.id
+  item.index_status = 'running'
+  item.error_message = null
   try {
     await api.post(`/knowledge-bases/${item.knowledge_base_id}/documents/${item.id}/index`)
     await loadDocuments()
@@ -220,6 +268,8 @@ const indexDocument = async (item: DocumentItem) => {
     busyDocumentId.value = ''
   }
 }
+
+let documentPollTimer: number | undefined
 
 const deleteDocument = async (item: DocumentItem) => {
   busyDocumentId.value = item.id
@@ -298,7 +348,20 @@ const extractApiError = (error: unknown) => {
   return '问答请求失败，请检查后端日志或模型服务配置。'
 }
 
-onMounted(loadKnowledgeBases)
+onMounted(() => {
+  loadKnowledgeBases()
+  documentPollTimer = window.setInterval(() => {
+    if (selectedKnowledgeBaseId.value && hasRunningDocuments.value && !loadingDocuments.value) {
+      loadDocuments()
+    }
+  }, 2000)
+})
+
+onUnmounted(() => {
+  if (documentPollTimer !== undefined) {
+    window.clearInterval(documentPollTimer)
+  }
+})
 </script>
 
 <template>
@@ -398,17 +461,35 @@ onMounted(loadKnowledgeBases)
             <div class="panel-head">
               <div>
                 <h3>文档管理</h3>
-                <p>PDF / Word / Markdown / TXT</p>
+                <p>PDF / Word / Markdown / TXT · 支持多文件上传</p>
               </div>
-              <a-button @click="loadDocuments">
-                <template #icon><ReloadOutlined /></template>
-              </a-button>
+              <div class="panel-actions">
+                <a-button
+                  :loading="batchParsing"
+                  :disabled="!selectedKnowledgeBaseId"
+                  @click="parsePendingDocuments"
+                >
+                  解析待处理
+                </a-button>
+                <a-button
+                  type="primary"
+                  ghost
+                  :loading="batchIndexing"
+                  :disabled="!selectedKnowledgeBaseId"
+                  @click="indexPendingDocuments"
+                >
+                  索引待处理
+                </a-button>
+                <a-button @click="loadDocuments">
+                  <template #icon><ReloadOutlined /></template>
+                </a-button>
+              </div>
             </div>
 
             <a-upload-dragger v-bind="uploadProps" class="upload-zone">
               <p class="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p class="ant-upload-text">拖拽或点击上传文档</p>
-              <p class="ant-upload-hint">上传后按顺序执行解析和索引</p>
+              <p class="ant-upload-text">拖拽或点击上传一个或多个文档</p>
+              <p class="ant-upload-hint">上传后可批量解析和索引</p>
             </a-upload-dragger>
 
             <a-spin :spinning="loadingDocuments">
@@ -437,7 +518,8 @@ onMounted(loadKnowledgeBases)
                   <div class="document-actions">
                     <a-button
                       size="small"
-                      :loading="busyDocumentId === item.id"
+                      :disabled="item.parse_status === 'running' || item.index_status === 'running'"
+                      :loading="busyDocumentId === item.id || item.parse_status === 'running'"
                       @click="parseDocument(item)"
                     >
                       解析
@@ -446,8 +528,8 @@ onMounted(loadKnowledgeBases)
                       size="small"
                       type="primary"
                       ghost
-                      :disabled="item.parse_status !== 'parsed'"
-                      :loading="busyDocumentId === item.id"
+                      :disabled="item.parse_status !== 'parsed' || item.index_status === 'running'"
+                      :loading="busyDocumentId === item.id || item.index_status === 'running'"
                       @click="indexDocument(item)"
                     >
                       索引

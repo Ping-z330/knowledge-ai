@@ -28,6 +28,9 @@ class VectorStore:
     def upsert(self, collection_name: str, records: list[VectorRecord]) -> None:
         raise NotImplementedError
 
+    def delete_by_document(self, collection_name: str, document_id: str) -> None:
+        raise NotImplementedError
+
     def query(
         self,
         collection_name: str,
@@ -65,6 +68,13 @@ class ChromaVectorStore(VectorStore):
             )
         except Exception as exc:
             raise VectorStoreError(f"Failed to write vectors: {exc}") from exc
+
+    def delete_by_document(self, collection_name: str, document_id: str) -> None:
+        collection = self.client.get_or_create_collection(name=collection_name)
+        try:
+            collection.delete(where={"document_id": document_id})
+        except Exception as exc:
+            raise VectorStoreError(f"Failed to delete document vectors: {exc}") from exc
 
     def query(
         self,

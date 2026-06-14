@@ -50,6 +50,29 @@ class DocumentRepositoryTest(unittest.TestCase):
             self.assertEqual(created["parse_status"], "uploaded")
             self.assertEqual(created["index_status"], "pending")
 
+            parsing = repository.update_parse_status(
+                created["id"],
+                parse_status="running",
+                error_message=None,
+            )
+            self.assertEqual(parsing["parse_status"], "running")
+
+            indexing = repository.update_index_status(
+                created["id"],
+                index_status="running",
+                error_message=None,
+            )
+            self.assertEqual(indexing["index_status"], "running")
+
+            reparsed = repository.update_parse_and_index_status(
+                created["id"],
+                parse_status="parsed",
+                index_status="pending",
+                error_message=None,
+            )
+            self.assertEqual(reparsed["parse_status"], "parsed")
+            self.assertEqual(reparsed["index_status"], "pending")
+
             listed = repository.list_for_knowledge_base(knowledge_base["id"])
             self.assertEqual(len(listed), 1)
             self.assertEqual(listed[0]["filename"], "产品手册.pdf")
@@ -57,6 +80,52 @@ class DocumentRepositoryTest(unittest.TestCase):
             deleted = repository.delete(knowledge_base["id"], created["id"])
             self.assertIsNotNone(deleted)
             self.assertEqual(repository.list_for_knowledge_base(knowledge_base["id"]), [])
+
+    def test_list_pending_parse_and_index_documents(self) -> None:
+        from app.database import connection_scope
+        from app.repositories.documents import DocumentRepository
+        from app.repositories.knowledge_bases import KnowledgeBaseRepository
+        from app.schemas import KnowledgeBaseCreate
+
+        with connection_scope() as connection:
+            knowledge_base = KnowledgeBaseRepository(connection).create(
+                KnowledgeBaseCreate(name="产品库")
+            )
+            repository = DocumentRepository(connection)
+            uploaded = repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="uploaded.txt",
+                content_type="text/plain",
+                storage_path="/tmp/uploaded.txt",
+            )
+            parsed = repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="parsed.txt",
+                content_type="text/plain",
+                storage_path="/tmp/parsed.txt",
+            )
+            repository.update_parse_and_index_status(
+                parsed["id"],
+                parse_status="parsed",
+                index_status="pending",
+            )
+            indexed = repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="indexed.txt",
+                content_type="text/plain",
+                storage_path="/tmp/indexed.txt",
+            )
+            repository.update_parse_and_index_status(
+                indexed["id"],
+                parse_status="parsed",
+                index_status="indexed",
+            )
+
+            pending_parse = repository.list_pending_parse(knowledge_base["id"])
+            pending_index = repository.list_pending_index(knowledge_base["id"])
+
+            self.assertEqual([item["id"] for item in pending_parse], [uploaded["id"]])
+            self.assertEqual([item["id"] for item in pending_index], [parsed["id"]])
 
 
 class DocumentStorageTest(unittest.TestCase):
@@ -75,4 +144,3 @@ class DocumentStorageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
