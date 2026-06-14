@@ -123,9 +123,14 @@ class DocumentRepositoryTest(unittest.TestCase):
 
             pending_parse = repository.list_pending_parse(knowledge_base["id"])
             pending_index = repository.list_pending_index(knowledge_base["id"])
+            parsed_documents = repository.list_parsed(knowledge_base["id"])
 
             self.assertEqual([item["id"] for item in pending_parse], [uploaded["id"]])
             self.assertEqual([item["id"] for item in pending_index], [parsed["id"]])
+            self.assertEqual(
+                [item["id"] for item in parsed_documents],
+                [parsed["id"], indexed["id"]],
+            )
 
 
 class DocumentStorageTest(unittest.TestCase):

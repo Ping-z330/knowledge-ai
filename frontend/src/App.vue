@@ -81,6 +81,7 @@ const creatingKnowledgeBase = ref(false)
 const asking = ref(false)
 const batchParsing = ref(false)
 const batchIndexing = ref(false)
+const reindexingAll = ref(false)
 const busyDocumentId = ref('')
 const busyAnswerId = ref('')
 
@@ -281,6 +282,21 @@ const indexPendingDocuments = async () => {
     await loadDocuments()
   } finally {
     batchIndexing.value = false
+  }
+}
+
+const reindexAllDocuments = async () => {
+  if (!selectedKnowledgeBaseId.value) return
+
+  reindexingAll.value = true
+  try {
+    const { data } = await api.post<BatchTaskResponse>(
+      `/knowledge-bases/${selectedKnowledgeBaseId.value}/documents/reindex-all`,
+    )
+    message.info(data.scheduled ? `已触发 ${data.scheduled} 个重建索引任务` : '没有已解析文档')
+    await loadDocuments()
+  } finally {
+    reindexingAll.value = false
   }
 }
 
@@ -518,6 +534,13 @@ onUnmounted(() => {
                   @click="indexPendingDocuments"
                 >
                   索引待处理
+                </a-button>
+                <a-button
+                  :loading="reindexingAll"
+                  :disabled="!selectedKnowledgeBaseId"
+                  @click="reindexAllDocuments"
+                >
+                  重建索引
                 </a-button>
                 <a-button @click="loadDocuments">
                   <template #icon><ReloadOutlined /></template>

@@ -84,6 +84,29 @@ class DocumentRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    def list_parsed(self, knowledge_base_id: str) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT
+                id,
+                knowledge_base_id,
+                filename,
+                content_type,
+                storage_path,
+                parse_status,
+                index_status,
+                error_message,
+                created_at,
+                updated_at
+            FROM documents
+            WHERE knowledge_base_id = ?
+              AND parse_status = 'parsed'
+            ORDER BY created_at ASC
+            """,
+            (knowledge_base_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def get(self, document_id: str) -> dict | None:
         row = self.connection.execute(
             """

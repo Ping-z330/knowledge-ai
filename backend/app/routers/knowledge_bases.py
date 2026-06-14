@@ -366,6 +366,39 @@ def index_pending_documents(
     }
 
 
+@router.post(
+    "/{knowledge_base_id}/documents/reindex-all",
+    response_model=BatchTaskResponse,
+)
+def reindex_all_documents(
+    knowledge_base_id: str,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+        document_repository = DocumentRepository(connection)
+        documents = document_repository.list_parsed(knowledge_base_id)
+        for document in documents:
+            document_repository.update_index_status(
+                document["id"],
+                index_status="running",
+                error_message=None,
+            )
+            background_tasks.add_task(
+                _run_index_document_task,
+                knowledge_base_id,
+                document["id"],
+            )
+
+    return {
+        "scheduled": len(documents),
+        "document_ids": [document["id"] for document in documents],
+    }
+
+
 @router.post("/{knowledge_base_id}/retrieve", response_model=RetrievalResponse)
 def retrieve_from_knowledge_base(
     knowledge_base_id: str,

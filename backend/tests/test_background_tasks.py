@@ -193,6 +193,67 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         self.assertEqual(parse_document["parse_status"], "running")
         self.assertEqual(index_document["index_status"], "running")
 
+    def test_reindex_all_route_schedules_all_parsed_documents(self) -> None:
+        from fastapi import BackgroundTasks
+
+        from app.database import connection_scope
+        from app.repositories.documents import DocumentRepository
+        from app.repositories.knowledge_bases import KnowledgeBaseRepository
+        from app.routers import knowledge_bases as router_module
+        from app.schemas import KnowledgeBaseCreate
+
+        with connection_scope() as connection:
+            knowledge_base = KnowledgeBaseRepository(connection).create(
+                KnowledgeBaseCreate(name="产品库")
+            )
+            document_repository = DocumentRepository(connection)
+            uploaded = document_repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="uploaded.txt",
+                content_type="text/plain",
+                storage_path=str(self.root / "uploaded.txt"),
+            )
+            parsed = document_repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="parsed.txt",
+                content_type="text/plain",
+                storage_path=str(self.root / "parsed.txt"),
+            )
+            indexed = document_repository.create_uploaded(
+                knowledge_base_id=knowledge_base["id"],
+                filename="indexed.txt",
+                content_type="text/plain",
+                storage_path=str(self.root / "indexed.txt"),
+            )
+            document_repository.update_parse_and_index_status(
+                parsed["id"],
+                parse_status="parsed",
+                index_status="pending",
+            )
+            document_repository.update_parse_and_index_status(
+                indexed["id"],
+                parse_status="parsed",
+                index_status="indexed",
+            )
+
+        response = router_module.reindex_all_documents(
+            knowledge_base["id"],
+            BackgroundTasks(),
+        )
+
+        self.assertEqual(response["scheduled"], 2)
+        self.assertEqual(response["document_ids"], [parsed["id"], indexed["id"]])
+
+        with connection_scope() as connection:
+            document_repository = DocumentRepository(connection)
+            uploaded_document = document_repository.get(uploaded["id"])
+            parsed_document = document_repository.get(parsed["id"])
+            indexed_document = document_repository.get(indexed["id"])
+
+        self.assertEqual(uploaded_document["index_status"], "pending")
+        self.assertEqual(parsed_document["index_status"], "running")
+        self.assertEqual(indexed_document["index_status"], "running")
+
 
 if __name__ == "__main__":
     unittest.main()
