@@ -281,6 +281,25 @@ h4 {
   margin-bottom: 16px;
 }
 
+.document-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.document-toolbar .ant-segmented {
+  min-width: 0;
+}
+
+.document-match-count {
+  color: #6d7a72;
+  font-size: 12px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .document-list {
   display: grid;
   gap: 10px;
@@ -572,6 +591,14 @@ h4 {
 
   .document-row {
     grid-template-columns: 1fr;
+  }
+
+  .document-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .document-match-count {
+    text-align: left;
   }
 
   .document-status,

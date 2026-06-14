@@ -70,6 +70,8 @@ const questionAnswers = ref<QuestionAnswer[]>([])
 const answer = ref<QuestionResponse | null>(null)
 const question = ref('')
 const questionError = ref('')
+const documentSearch = ref('')
+const documentFilter = ref('all')
 const topK = ref(5)
 
 const loadingKnowledgeBases = ref(false)
@@ -104,6 +106,43 @@ const hasRunningDocuments = computed(() =>
 const parsedCount = computed(
   () => documents.value.filter((item) => item.parse_status === 'parsed').length,
 )
+
+const documentFilterOptions = computed(() => [
+  { label: `全部 ${documents.value.length}`, value: 'all' },
+  { label: `待解析 ${countDocumentsByFilter('pending_parse')}`, value: 'pending_parse' },
+  { label: `解析中 ${countDocumentsByFilter('parsing')}`, value: 'parsing' },
+  { label: `待索引 ${countDocumentsByFilter('pending_index')}`, value: 'pending_index' },
+  { label: `索引中 ${countDocumentsByFilter('indexing')}`, value: 'indexing' },
+  { label: `已索引 ${countDocumentsByFilter('indexed')}`, value: 'indexed' },
+  { label: `失败 ${countDocumentsByFilter('failed')}`, value: 'failed' },
+])
+
+const filteredDocuments = computed(() => {
+  const search = documentSearch.value.trim().toLowerCase()
+  return documents.value.filter((item) => {
+    const matchesSearch =
+      !search ||
+      item.filename.toLowerCase().includes(search) ||
+      item.content_type.toLowerCase().includes(search)
+    return matchesSearch && matchesDocumentFilter(item, documentFilter.value)
+  })
+})
+
+function matchesDocumentFilter(item: DocumentItem, filter: string) {
+  if (filter === 'pending_parse') return ['uploaded', 'failed'].includes(item.parse_status)
+  if (filter === 'parsing') return item.parse_status === 'running'
+  if (filter === 'pending_index') {
+    return item.parse_status === 'parsed' && ['pending', 'failed'].includes(item.index_status)
+  }
+  if (filter === 'indexing') return item.index_status === 'running'
+  if (filter === 'indexed') return item.index_status === 'indexed'
+  if (filter === 'failed') return item.parse_status === 'failed' || item.index_status === 'failed'
+  return true
+}
+
+function countDocumentsByFilter(filter: string) {
+  return documents.value.filter((item) => matchesDocumentFilter(item, filter)).length
+}
 
 const statusTone = (status: string) => {
   if (status === 'indexed' || status === 'parsed') return 'success'
@@ -492,9 +531,24 @@ onUnmounted(() => {
               <p class="ant-upload-hint">上传后可批量解析和索引</p>
             </a-upload-dragger>
 
+            <div class="document-toolbar">
+              <a-input-search
+                v-model:value="documentSearch"
+                allow-clear
+                placeholder="搜索文件名或类型"
+              />
+              <a-segmented
+                v-model:value="documentFilter"
+                :options="documentFilterOptions"
+              />
+              <span class="document-match-count">
+                {{ filteredDocuments.length }} / {{ documents.length }}
+              </span>
+            </div>
+
             <a-spin :spinning="loadingDocuments">
               <div class="document-list">
-                <article v-for="item in documents" :key="item.id" class="document-row">
+                <article v-for="item in filteredDocuments" :key="item.id" class="document-row">
                   <div class="document-main">
                     <FileSearchOutlined class="file-icon" />
                     <div>
@@ -545,6 +599,10 @@ onUnmounted(() => {
                 <a-empty
                   v-if="!documents.length"
                   description="上传第一份文档开始构建知识库"
+                />
+                <a-empty
+                  v-else-if="!filteredDocuments.length"
+                  description="没有匹配的文档"
                 />
               </div>
             </a-spin>
