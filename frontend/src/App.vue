@@ -14,6 +14,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SendOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import type { UploadProps } from 'ant-design-vue'
 
@@ -59,6 +60,18 @@ type QuestionAnswer = QuestionResponse & {
   created_at: string
 }
 
+type RetrievalResult = {
+  vector_id: string
+  text: string
+  score: number | null
+  metadata: Record<string, unknown>
+}
+
+type RetrievalResponse = {
+  query: string
+  results: RetrievalResult[]
+}
+
 const api = axios.create({
   baseURL: '/api',
 })
@@ -68,6 +81,7 @@ const selectedKnowledgeBaseId = ref('')
 const documents = ref<DocumentItem[]>([])
 const questionAnswers = ref<QuestionAnswer[]>([])
 const answer = ref<QuestionResponse | null>(null)
+const retrievalResults = ref<RetrievalResult[]>([])
 const question = ref('')
 const questionError = ref('')
 const documentSearch = ref('')
@@ -79,6 +93,7 @@ const loadingDocuments = ref(false)
 const loadingQuestionAnswers = ref(false)
 const creatingKnowledgeBase = ref(false)
 const asking = ref(false)
+const retrieving = ref(false)
 const batchParsing = ref(false)
 const batchIndexing = ref(false)
 const reindexingAll = ref(false)
@@ -143,6 +158,19 @@ function matchesDocumentFilter(item: DocumentItem, filter: string) {
 
 function countDocumentsByFilter(filter: string) {
   return documents.value.filter((item) => matchesDocumentFilter(item, filter)).length
+}
+
+function getResultTitle(metadata: Record<string, unknown>) {
+  const filename = metadata.filename || metadata.source_label || '未知来源'
+  return String(filename)
+}
+
+function getResultSubtitle(metadata: Record<string, unknown>) {
+  const parts = []
+  if (metadata.section_title) parts.push(String(metadata.section_title))
+  if (typeof metadata.chunk_index === 'number') parts.push(`chunk ${metadata.chunk_index + 1}`)
+  if (!parts.length && metadata.document_id) parts.push(String(metadata.document_id))
+  return parts.join(' · ')
 }
 
 const statusTone = (status: string) => {
@@ -212,6 +240,7 @@ const loadQuestionAnswers = async () => {
 const selectKnowledgeBase = async (id: string) => {
   selectedKnowledgeBaseId.value = id
   answer.value = null
+  retrievalResults.value = []
   questionError.value = ''
   await loadDocuments()
   await loadQuestionAnswers()
@@ -267,6 +296,35 @@ const parsePendingDocuments = async () => {
     await loadDocuments()
   } finally {
     batchParsing.value = false
+  }
+}
+
+const retrieveOnly = async () => {
+  if (!selectedKnowledgeBaseId.value || !question.value.trim()) return
+  if (indexedCount.value === 0) {
+    questionError.value = '当前知识库还没有已索引文档。请先上传、解析并索引文档。'
+    retrievalResults.value = []
+    answer.value = null
+    return
+  }
+
+  retrieving.value = true
+  questionError.value = ''
+  answer.value = null
+  try {
+    const { data } = await api.post<RetrievalResponse>(
+      `/knowledge-bases/${selectedKnowledgeBaseId.value}/retrieve`,
+      {
+        query: question.value.trim(),
+        top_k: topK.value,
+      },
+    )
+    retrievalResults.value = data.results
+  } catch (error) {
+    retrievalResults.value = []
+    questionError.value = extractApiError(error)
+  } finally {
+    retrieving.value = false
   }
 }
 
@@ -341,6 +399,7 @@ const askQuestion = async () => {
   if (indexedCount.value === 0) {
     questionError.value = '当前知识库还没有已索引文档。请先上传、解析并索引文档。'
     answer.value = null
+    retrievalResults.value = []
     return
   }
 
@@ -356,8 +415,15 @@ const askQuestion = async () => {
       },
     )
     answer.value = data
+    retrievalResults.value = data.sources.map((source) => ({
+      vector_id: source.vector_id,
+      text: source.text,
+      score: source.score,
+      metadata: source.metadata,
+    }))
     await loadQuestionAnswers()
   } catch (error) {
+    retrievalResults.value = []
     questionError.value = extractApiError(error)
   } finally {
     asking.value = false
@@ -372,6 +438,12 @@ const selectQuestionAnswer = (item: QuestionAnswer) => {
     answer: item.answer,
     sources: item.sources,
   }
+  retrievalResults.value = item.sources.map((source) => ({
+    vector_id: source.vector_id,
+    text: source.text,
+    score: source.score,
+    metadata: source.metadata,
+  }))
   questionError.value = ''
 }
 
@@ -593,28 +665,34 @@ onUnmounted(() => {
                   </div>
 
                   <div class="document-actions">
-                    <a-button
-                      size="small"
-                      :disabled="item.parse_status === 'running' || item.index_status === 'running'"
-                      :loading="busyDocumentId === item.id || item.parse_status === 'running'"
-                      @click="parseDocument(item)"
-                    >
-                      解析
-                    </a-button>
-                    <a-button
-                      size="small"
-                      type="primary"
-                      ghost
-                      :disabled="item.parse_status !== 'parsed' || item.index_status === 'running'"
-                      :loading="busyDocumentId === item.id || item.index_status === 'running'"
-                      @click="indexDocument(item)"
-                    >
-                      索引
-                    </a-button>
-                    <a-popconfirm title="删除这个文档？" @confirm="deleteDocument(item)">
-                      <a-button size="small" danger>
-                        <template #icon><DeleteOutlined /></template>
+                    <a-tooltip title="解析文档">
+                      <a-button
+                        size="small"
+                        :disabled="item.parse_status === 'running' || item.index_status === 'running'"
+                        :loading="busyDocumentId === item.id || item.parse_status === 'running'"
+                        @click="parseDocument(item)"
+                      >
+                        <template #icon><FileSearchOutlined /></template>
                       </a-button>
+                    </a-tooltip>
+                    <a-tooltip title="索引文档">
+                      <a-button
+                        size="small"
+                        type="primary"
+                        ghost
+                        :disabled="item.parse_status !== 'parsed' || item.index_status === 'running'"
+                        :loading="busyDocumentId === item.id || item.index_status === 'running'"
+                        @click="indexDocument(item)"
+                      >
+                        <template #icon><ApiOutlined /></template>
+                      </a-button>
+                    </a-tooltip>
+                    <a-popconfirm title="删除这个文档？" @confirm="deleteDocument(item)">
+                      <a-tooltip title="删除文档">
+                        <a-button size="small" danger>
+                          <template #icon><DeleteOutlined /></template>
+                        </a-button>
+                      </a-tooltip>
                     </a-popconfirm>
                   </div>
                 </article>
@@ -634,8 +712,8 @@ onUnmounted(() => {
           <section class="panel qa-panel">
             <div class="panel-head">
               <div>
-                <h3>知识库问答</h3>
-                <p>回答必须来自已索引文档</p>
+                <h3>问答调试面板</h3>
+                <p>先检索，再问答，定位命中情况</p>
               </div>
               <a-tag color="success" v-if="indexedCount > 0">
                 <CheckCircleOutlined />
@@ -651,15 +729,25 @@ onUnmounted(() => {
               />
               <div class="ask-actions">
                 <a-input-number v-model:value="topK" :min="1" :max="20" />
-                <a-button
-                  type="primary"
-                  :loading="asking"
-                  :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
-                  @click="askQuestion"
-                >
-                  <template #icon><SendOutlined /></template>
-                  提问
-                </a-button>
+                <div class="ask-buttons">
+                  <a-button
+                    :loading="retrieving"
+                    :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
+                    @click="retrieveOnly"
+                  >
+                    <template #icon><SearchOutlined /></template>
+                    仅检索
+                  </a-button>
+                  <a-button
+                    type="primary"
+                    :loading="asking"
+                    :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
+                    @click="askQuestion"
+                  >
+                    <template #icon><SendOutlined /></template>
+                    提问
+                  </a-button>
+                </div>
               </div>
             </div>
 
@@ -678,6 +766,45 @@ onUnmounted(() => {
               show-icon
               :message="questionError"
             />
+
+            <div class="debug-block">
+              <div class="debug-head">
+                <div>
+                  <h4>检索结果</h4>
+                  <p>看命中了哪些片段、分数如何、上下文是否足够</p>
+                </div>
+                <span class="document-match-count">
+                  {{ retrievalResults.length }} 条
+                </span>
+              </div>
+
+              <a-empty
+                v-if="!retrievalResults.length"
+                description="点击“仅检索”或“提问”查看命中片段"
+              />
+
+              <div v-else class="debug-list">
+                <article v-for="(result, index) in retrievalResults" :key="result.vector_id" class="debug-row">
+                  <div class="debug-row-head">
+                    <div class="debug-rank">
+                      <span>#{{ index + 1 }}</span>
+                      <a-tag color="blue" v-if="result.score !== null">
+                        score {{ result.score.toFixed(3) }}
+                      </a-tag>
+                    </div>
+                    <div class="debug-meta">
+                      <strong>{{ getResultTitle(result.metadata) }}</strong>
+                      <small>{{ getResultSubtitle(result.metadata) }}</small>
+                    </div>
+                  </div>
+
+                  <details class="debug-details">
+                    <summary>查看片段</summary>
+                    <p>{{ result.text }}</p>
+                  </details>
+                </article>
+              </div>
+            </div>
 
             <div v-if="answer" class="answer-block">
               <div class="answer-label">
@@ -705,7 +832,7 @@ onUnmounted(() => {
 
             <div v-else class="empty-answer">
               <CloudUploadOutlined />
-              <p>完成文档索引后，在这里提出问题并查看引用来源。</p>
+              <p>完成文档索引后，可以先检索命中片段，再查看回答与引用来源。</p>
             </div>
 
             <div class="history-block">
