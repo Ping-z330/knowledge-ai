@@ -483,6 +483,15 @@ h4 {
   border-radius: 8px;
 }
 
+.debug-row-cited {
+  border-left: 3px solid #2f6f5e;
+}
+
+.debug-row-uncited {
+  border-left: 3px solid #cdd5cf;
+  opacity: 0.72;
+}
+
 .debug-row-head {
   display: grid;
   gap: 8px;

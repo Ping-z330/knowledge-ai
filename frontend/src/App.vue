@@ -233,9 +233,24 @@ function getResultChunkLabel(metadata: Record<string, unknown>) {
 
 const retrievalQuery = computed(() => question.value.trim())
 
+const citedVectorIds = computed(() => {
+  if (!answer.value) return new Set<string>()
+  return new Set(answer.value.sources.map((s) => s.vector_id))
+})
+
+const retrievalCitationStats = computed(() => {
+  const cited = retrievalResults.value.filter((r) => citedVectorIds.value.has(r.vector_id)).length
+  return { cited, uncited: retrievalResults.value.length - cited }
+})
+
 const retrievalSummary = computed(() => {
   if (!retrievalQuery.value) return '尚未发起检索'
-  return `Query: ${retrievalQuery.value} · top_k: ${topK.value} · 命中 ${retrievalResults.value.length} 条`
+  const stats = retrievalCitationStats.value
+  let extra = `命中 ${retrievalResults.value.length} 条`
+  if (answer.value && retrievalResults.value.length > 0) {
+    extra += ` · 引用 ${stats.cited} 条 · 未采用 ${stats.uncited} 条`
+  }
+  return `Query: ${retrievalQuery.value} · top_k: ${topK.value} · ${extra}`
 })
 
 function escapeHtml(value: string) {
@@ -1240,12 +1255,26 @@ onUnmounted(() => {
                   />
 
                   <div v-else class="debug-list">
-                    <article v-for="(result, index) in retrievalResults" :key="result.vector_id" class="debug-row">
+                    <article
+                      v-for="(result, index) in retrievalResults"
+                      :key="result.vector_id"
+                      class="debug-row"
+                      :class="{
+                        'debug-row-cited': answer && citedVectorIds.has(result.vector_id),
+                        'debug-row-uncited': answer && !citedVectorIds.has(result.vector_id),
+                      }"
+                    >
                       <div class="debug-row-head">
                         <div class="debug-rank">
                           <span>#{{ index + 1 }}</span>
                           <a-tag color="blue" v-if="result.score !== null">
                             score {{ result.score.toFixed(3) }}
+                          </a-tag>
+                          <a-tag v-if="answer && citedVectorIds.has(result.vector_id)" color="success">
+                            已引用
+                          </a-tag>
+                          <a-tag v-else-if="answer && !citedVectorIds.has(result.vector_id)" color="default">
+                            未采用
                           </a-tag>
                         </div>
                         <div class="debug-meta">
