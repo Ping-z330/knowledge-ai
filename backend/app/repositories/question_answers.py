@@ -14,6 +14,7 @@ def _to_dict(row: Row | None) -> dict | None:
 
     item = dict(row)
     item["sources"] = json.loads(item.pop("sources_json"))
+    item["rating"] = item.get("rating")
     return item
 
 
@@ -37,6 +38,7 @@ class QuestionAnswerRepository:
                 answer,
                 sources_json,
                 top_k,
+                rating,
                 created_at
             FROM question_answers
             WHERE knowledge_base_id = ?
@@ -57,6 +59,7 @@ class QuestionAnswerRepository:
                 answer,
                 sources_json,
                 top_k,
+                rating,
                 created_at
             FROM question_answers
             WHERE id = ?
@@ -110,6 +113,13 @@ class QuestionAnswerRepository:
             (knowledge_base_id,),
         ).fetchone()
         return row["cnt"] if row else 0
+
+    def update_rating(self, answer_id: str, rating: int) -> dict | None:
+        self.connection.execute(
+            "UPDATE question_answers SET rating = ? WHERE id = ?",
+            (rating, answer_id),
+        )
+        return self.get(answer_id)
 
     def delete(self, knowledge_base_id: str, answer_id: str) -> bool:
         cursor = self.connection.execute(

@@ -113,6 +113,7 @@ def init_db() -> None:
                 answer TEXT NOT NULL,
                 sources_json TEXT NOT NULL,
                 top_k INTEGER NOT NULL,
+                rating INTEGER,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (knowledge_base_id)
                     REFERENCES knowledge_bases(id)
@@ -126,3 +127,11 @@ def init_db() -> None:
             ON question_answers(created_at);
             """
         )
+
+        # 兼容已有数据库：添加 rating 列
+        try:
+            connection.execute(
+                "ALTER TABLE question_answers ADD COLUMN rating INTEGER"
+            )
+        except Exception:
+            pass

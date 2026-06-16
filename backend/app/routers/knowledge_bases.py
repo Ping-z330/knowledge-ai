@@ -23,6 +23,7 @@ from ..schemas import (
     QuestionAnswerRead,
     QuestionRequest,
     QuestionResponse,
+    RatingUpdate,
     RetrievalRequest,
     RetrievalResponse,
 )
@@ -531,20 +532,22 @@ def answer_from_knowledge_base_stream(
             return
 
         full_answer = "".join(full_answer_parts)
+        answer_id = ""
         # 保存到问答历史
         try:
             with connection_scope() as connection:
-                QuestionAnswerRepository(connection).create(
+                created = QuestionAnswerRepository(connection).create(
                     knowledge_base_id=knowledge_base_id,
                     question=payload.question,
                     answer=full_answer,
                     sources=sources_data,
                     top_k=payload.top_k,
                 )
+                answer_id = created["id"]
         except Exception:
             logging.getLogger(__name__).exception("Failed to persist streamed answer")
 
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        yield f"data: {json.dumps({'type': 'done', 'answer_id': answer_id})}\n\n"
 
     return StreamingResponse(
         sse_events(),
@@ -573,6 +576,27 @@ def list_question_answers(
         items = repo.list_for_knowledge_base(knowledge_base_id, limit=limit, offset=offset)
         total = repo.count_for_knowledge_base(knowledge_base_id)
     return {"items": items, "total": total, "limit": limit, "offset": offset}
+
+
+@router.patch(
+    "/{knowledge_base_id}/question-answers/{answer_id}/rating",
+    response_model=QuestionAnswerRead,
+)
+def rate_question_answer(
+    knowledge_base_id: str,
+    answer_id: str,
+    payload: RatingUpdate,
+) -> dict:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+        updated = QuestionAnswerRepository(connection).update_rating(
+            answer_id, payload.rating
+        )
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Question answer not found")
+    return updated
 
 
 @router.delete(

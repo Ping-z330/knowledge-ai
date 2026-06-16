@@ -124,4 +124,9 @@ class QuestionAnswerRead(BaseModel):
     answer: str
     sources: list[AnswerSourceRead]
     top_k: int
+    rating: int | None = None
     created_at: str
+
+
+class RatingUpdate(BaseModel):
+    rating: int = Field(ge=-1, le=1)

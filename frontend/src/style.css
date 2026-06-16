@@ -796,6 +796,51 @@ h4 {
   flex-shrink: 0;
 }
 
+/* Rating */
+.rating-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.rating-row .ant-btn {
+  font-size: 16px;
+  padding: 2px 8px;
+  color: #aab5ae;
+}
+
+.rating-active {
+  color: #d8f36b !important;
+}
+
+.conv-rating {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 0 4px;
+}
+
+.conv-rating-btn {
+  padding: 2px 8px;
+  font-size: 14px;
+  background: transparent;
+  border: 1px solid #dde4db;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.conv-rating-btn:hover,
+.conv-rating-btn.active {
+  opacity: 1;
+}
+
+.conv-rating-btn.active {
+  border-color: #d8f36b;
+  background: rgba(216, 243, 107, 0.12);
+}
+
 .sources {
   display: grid;
   gap: 10px;

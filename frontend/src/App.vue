@@ -59,6 +59,7 @@ type QuestionAnswer = QuestionResponse & {
   id: string
   knowledge_base_id: string
   top_k: number
+  rating: number | null
   created_at: string
 }
 
@@ -86,6 +87,8 @@ type ConversationMessage = {
   role: 'user' | 'assistant'
   content: string
   sources: AnswerSource[]
+  rating: number | null
+  answerId: string
   created_at: string
 }
 
@@ -135,6 +138,13 @@ const convStreamingAnswer = ref('')
 const convInput = ref('')
 const convAsking = ref(false)
 const convMessagesRef = ref<HTMLElement | null>(null)
+const currentAnswerId = ref('')
+const ratingSubmitting = ref(false)
+
+const currentAnswerRating = computed(() => {
+  const item = questionAnswers.value.find((a) => a.id === currentAnswerId.value)
+  return item?.rating ?? null
+})
 
 function scrollConvToBottom() {
   nextTick(() => {
@@ -332,6 +342,8 @@ const askConversation = async () => {
     role: 'user',
     content: question,
     sources: [],
+    rating: null,
+    answerId: '',
     created_at: new Date().toISOString(),
   }
   conversation.value = [...conversation.value, userMsg]
@@ -342,6 +354,8 @@ const askConversation = async () => {
     role: 'assistant',
     content: '',
     sources: [],
+    rating: null,
+    answerId: '',
     created_at: new Date().toISOString(),
   }
 
@@ -401,6 +415,7 @@ const askConversation = async () => {
           } else if (event.type === 'done') {
             assistantMsg.content = convStreamingAnswer.value
             assistantMsg.sources = sources
+            assistantMsg.answerId = event.answer_id || ''
             conversation.value = [...conversation.value, assistantMsg]
             convStreaming.value = false
             convStreamingAnswer.value = ''
@@ -430,6 +445,22 @@ const askConversation = async () => {
     if (!convStreaming.value && !assistantMsg.content && conversation.value.at(-1)?.id === assistantMsg.id) {
       conversation.value = conversation.value.slice(0, -1)
     }
+  }
+}
+
+const submitRating = async (answerId: string, rating: number, knowledgeBaseId: string) => {
+  if (!answerId) return
+  ratingSubmitting.value = true
+  try {
+    await api.patch(`/knowledge-bases/${knowledgeBaseId}/question-answers/${answerId}/rating`, { rating })
+    // 更新列表中的评分
+    const item = questionAnswers.value.find((a) => a.id === answerId)
+    if (item) item.rating = rating
+    // 更新对话中的评分
+    const convMsg = conversation.value.find((m) => m.answerId === answerId)
+    if (convMsg) convMsg.rating = rating
+  } finally {
+    ratingSubmitting.value = false
   }
 }
 
@@ -865,6 +896,7 @@ const askQuestion = async () => {
                 metadata: r.metadata,
               })),
             }
+            currentAnswerId.value = event.answer_id || ''
             streaming.value = false
             await loadQuestionAnswers()
           } else if (event.type === 'error') {
@@ -1332,6 +1364,31 @@ onUnmounted(() => {
                     @click="handleCitationClick"
                   ></p>
 
+                  <div v-if="!streaming && answer && currentAnswerId" class="rating-row">
+                    <a-tooltip title="回答准确有用">
+                      <a-button
+                        size="small"
+                        type="text"
+                        :class="{ 'rating-active': currentAnswerRating === 1 }"
+                        :loading="ratingSubmitting"
+                        @click="submitRating(currentAnswerId, 1, selectedKnowledgeBaseId)"
+                      >
+                        👍
+                      </a-button>
+                    </a-tooltip>
+                    <a-tooltip title="回答不准确或无用">
+                      <a-button
+                        size="small"
+                        type="text"
+                        :class="{ 'rating-active': currentAnswerRating === -1 }"
+                        :loading="ratingSubmitting"
+                        @click="submitRating(currentAnswerId, -1, selectedKnowledgeBaseId)"
+                      >
+                        👎
+                      </a-button>
+                    </a-tooltip>
+                  </div>
+
                   <div v-if="!streaming && answer" class="sources">
                     <h4>引用来源</h4>
                     <article
@@ -1398,6 +1455,27 @@ onUnmounted(() => {
                           v-html="renderAnswerWithCitations(msg.content)"
                           @click="handleCitationClick"
                         ></p>
+                      </div>
+                      <div
+                        v-if="msg.role === 'assistant' && msg.answerId"
+                        class="conv-rating"
+                      >
+                        <a-tooltip title="回答准确有用">
+                          <button
+                            class="conv-rating-btn"
+                            :class="{ active: msg.rating === 1 }"
+                            :disabled="ratingSubmitting"
+                            @click="submitRating(msg.answerId, 1, selectedKnowledgeBaseId); msg.rating = 1"
+                          >👍</button>
+                        </a-tooltip>
+                        <a-tooltip title="回答不准确或无用">
+                          <button
+                            class="conv-rating-btn"
+                            :class="{ active: msg.rating === -1 }"
+                            :disabled="ratingSubmitting"
+                            @click="submitRating(msg.answerId, -1, selectedKnowledgeBaseId); msg.rating = -1"
+                          >👎</button>
+                        </a-tooltip>
                       </div>
                       <div
                         v-if="msg.role === 'assistant' && msg.sources.length"
