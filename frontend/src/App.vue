@@ -231,6 +231,16 @@ function getResultChunkLabel(metadata: Record<string, unknown>) {
   return typeof metadata.chunk_index === 'number' ? `chunk ${metadata.chunk_index + 1}` : ''
 }
 
+function scoreColor(score: number) {
+  if (score >= 0.7) return '#2f6f5e'
+  if (score >= 0.4) return '#c28b1c'
+  return '#8a968f'
+}
+
+function scoreBarWidth(score: number) {
+  return `${Math.round(score * 100)}%`
+}
+
 const retrievalQuery = computed(() => question.value.trim())
 
 const citedVectorIds = computed(() => {
@@ -1267,9 +1277,16 @@ onUnmounted(() => {
                       <div class="debug-row-head">
                         <div class="debug-rank">
                           <span>#{{ index + 1 }}</span>
-                          <a-tag color="blue" v-if="result.score !== null">
-                            score {{ result.score.toFixed(3) }}
-                          </a-tag>
+                          <span v-if="result.score !== null" class="score-bar-wrap">
+                            <span
+                              class="score-bar-fill"
+                              :style="{
+                                width: scoreBarWidth(result.score),
+                                background: scoreColor(result.score),
+                              }"
+                            ></span>
+                            <span class="score-bar-label">{{ result.score.toFixed(3) }}</span>
+                          </span>
                           <a-tag v-if="answer && citedVectorIds.has(result.vector_id)" color="success">
                             已引用
                           </a-tag>

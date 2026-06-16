@@ -511,6 +511,28 @@ h4 {
   font-weight: 760;
 }
 
+.score-bar-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 90px;
+}
+
+.score-bar-fill {
+  display: inline-block;
+  height: 6px;
+  min-width: 4px;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.score-bar-label {
+  font-size: 11px;
+  font-weight: 640;
+  white-space: nowrap;
+  color: #4e5d56;
+}
+
 .debug-meta {
   display: grid;
   gap: 2px;
