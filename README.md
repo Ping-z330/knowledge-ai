@@ -1,29 +1,37 @@
 # Knowledge Agent
 
-企业 RAG 知识库问答管理系统 MVP。
+企业 RAG 知识库问答管理系统。
 
-当前版本优先打通一整套通用链路：创建知识库、上传文档、解析切块、向量索引、语义检索、基于引用来源问答。权限、多租户、审计、异步任务队列等企业增强能力后续再接入。
+已打通完整链路：知识库管理、文档解析切块、向量索引、语义检索、流式问答、多轮对话、引用追溯、质量反馈。
 
 ## 技术栈
 
 - Frontend: Vue 3 + TypeScript + Vite + Ant Design Vue
 - Backend: FastAPI + SQLite
 - Vector DB: Chroma
-- Document parsing: Markdown / Text / PDF
-- Embedding: OpenAI-compatible API，当前推荐本地 Ollama `nomic-embed-text`
-- LLM: OpenAI-compatible API，可接 Ollama、DeepSeek、OpenAI 等
+- Document parsing: Markdown / Text / PDF / DOCX
+- Embedding: OpenAI-compatible API，推荐本地 Ollama `nomic-embed-text`
+- LLM: OpenAI-compatible API，支持流式输出
 
 ## 已实现功能
 
 - 知识库创建、列表、更新、删除
-- 文档上传、列表、删除
-- 文档解析与文本切块
-- Chroma 向量索引
-- Top-K 向量检索
-- RAG 问答与来源引用展示
+- 文档上传（大小限制）、列表（搜索/筛选/分页）、删除
+- 文档解析（段落感知语义切块）与向量索引
+- embedding 分批请求，避免超时
+- Chroma 向量索引与 Top-K 语义检索（分数色条可视化）
+- 流式 SSE 问答（逐 token 渲染）
+- 多轮对话（上下文历史传递、气泡 UI）
+- 引用双向联动（回答引文 ↔ 来源卡片相互定位）
+- 检索结果引用对比（已引用/未采用标记）
+- 回答质量反馈（👍/👎 评分持久化）
+- API Token 认证
+- 服务启动时自动恢复卡住的异步任务
+- CORS、健康检查（DB + Chroma）
 - 前端 MVP 管理台
 - `.env` 配置加载
 - 后端单元测试覆盖核心链路
+- 统一日志系统
 
 ## 项目结构
 
@@ -33,21 +41,21 @@
 │   ├── app/
 │   │   ├── routers/          # FastAPI API 路由
 │   │   ├── repositories/     # SQLite 数据访问
-│   │   ├── services/         # 解析、切块、索引、检索、问答
+│   │   ├── services/         # 解析、切块、索引、检索、问答、LLM/Embedding
+│   │   ├── auth.py           # API token 认证
 │   │   ├── config.py         # 环境变量配置
 │   │   ├── database.py       # SQLite 初始化
-│   │   └── main.py           # FastAPI app
+│   │   ├── logging_config.py # 日志配置
+│   │   └── main.py           # FastAPI app（CORS、上传限制、健康检查、启动恢复）
 │   ├── tests/                # 后端测试
 │   ├── data/                 # 本地数据库、上传文件、Chroma 数据
 │   └── requirements.txt
 ├── frontend/
 │   ├── src/
-│   │   ├── App.vue           # MVP 管理台
+│   │   ├── App.vue           # 管理台（调试面板 + 对话 + 历史）
 │   │   ├── main.ts
 │   │   └── style.css
 │   └── package.json
-├── docs/
-│   └── superpowers/specs/    # MVP 设计说明
 └── README.md
 ```
 
@@ -156,22 +164,35 @@ Vite 已配置 `/api` 代理到 `http://127.0.0.1:8000`。
 ## API 概览
 
 ```text
+# 知识库
 GET    /api/knowledge-bases
 POST   /api/knowledge-bases
 GET    /api/knowledge-bases/{knowledge_base_id}
 PATCH  /api/knowledge-bases/{knowledge_base_id}
 DELETE /api/knowledge-bases/{knowledge_base_id}
 
-GET    /api/knowledge-bases/{knowledge_base_id}/documents
+# 文档
+GET    /api/knowledge-bases/{knowledge_base_id}/documents                ?limit=&offset=
 POST   /api/knowledge-bases/{knowledge_base_id}/documents
 DELETE /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}
 
+# 解析 / 索引
 POST   /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}/parse
+POST   /api/knowledge-bases/{knowledge_base_id}/documents/parse-pending
 GET    /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks
 POST   /api/knowledge-bases/{knowledge_base_id}/documents/{document_id}/index
+POST   /api/knowledge-bases/{knowledge_base_id}/documents/index-pending
+POST   /api/knowledge-bases/{knowledge_base_id}/documents/reindex-all
 
+# 检索 / 问答
 POST   /api/knowledge-bases/{knowledge_base_id}/retrieve
 POST   /api/knowledge-bases/{knowledge_base_id}/questions
+POST   /api/knowledge-bases/{knowledge_base_id}/questions/stream          (SSE)
+
+# 问答历史 / 反馈
+GET    /api/knowledge-bases/{knowledge_base_id}/question-answers          ?limit=&offset=
+PATCH  /api/knowledge-bases/{knowledge_base_id}/question-answers/{id}/rating
+DELETE /api/knowledge-bases/{knowledge_base_id}/question-answers/{id}
 ```
 
 ## 测试
@@ -229,9 +250,8 @@ LLM_MODEL=qwen2.5:7b
 
 ## 下一步
 
-- 前端问答体验细化
-- 后端任务异步化，避免解析和索引长请求阻塞
-- 文档解析增强，支持更多格式和更稳定的结构抽取
-- 用户、角色、知识库权限
-- 引用高亮与回答可追溯性增强
-- 生产环境数据库和对象存储适配
+- 后端任务队列化（Celery/arq），避免 BackgroundTasks 重启丢失
+- 文档解析增强：旧 `.doc`、PPTX、HTML、PDF 表格提取
+- 用户、角色、知识库级权限
+- Embedding 模型本地缓存，避免重复请求
+- 生产环境：PostgreSQL、S3/MinIO 对象存储、Docker 部署
