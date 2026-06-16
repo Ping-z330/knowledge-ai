@@ -1,6 +1,10 @@
 from pathlib import Path
 
+import json
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from ..auth import require_api_token
 from ..database import connection_scope
@@ -22,7 +26,7 @@ from ..schemas import (
     RetrievalRequest,
     RetrievalResponse,
 )
-from ..services.answering import AnsweringError, answer_question
+from ..services.answering import AnsweringError, answer_question, answer_question_stream
 from ..services.chunker import chunk_document
 from ..services.document_parser import DocumentParseError, parse_document
 from ..services.document_storage import (
@@ -463,6 +467,10 @@ def answer_from_knowledge_base(
             knowledge_base_id=knowledge_base_id,
             question=payload.question,
             top_k=payload.top_k,
+            conversation_history=[
+                {"role": m.role, "content": m.content}
+                for m in payload.conversation_history
+            ],
         )
     except AnsweringError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -482,6 +490,70 @@ def answer_from_knowledge_base(
         "answer": result.answer,
         "sources": sources,
     }
+
+
+@router.post("/{knowledge_base_id}/questions/stream")
+def answer_from_knowledge_base_stream(
+    knowledge_base_id: str,
+    payload: QuestionRequest,
+) -> StreamingResponse:
+    with connection_scope() as connection:
+        knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
+        if knowledge_base is None:
+            raise HTTPException(status_code=404, detail="Knowledge base not found")
+
+    try:
+        sources, tokens = answer_question_stream(
+            knowledge_base_id=knowledge_base_id,
+            question=payload.question,
+            top_k=payload.top_k,
+            conversation_history=[
+                {"role": m.role, "content": m.content}
+                for m in payload.conversation_history
+            ],
+        )
+    except AnsweringError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    sources_data = [_source_to_dict(source) for source in sources]
+
+    def sse_events():
+        # 先发送来源信息
+        yield f"data: {json.dumps({'type': 'sources', 'sources': sources_data}, ensure_ascii=False)}\n\n"
+        # 逐 token 发送
+        full_answer_parts: list[str] = []
+        try:
+            for token in tokens:
+                full_answer_parts.append(token)
+                yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+        except Exception:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Stream interrupted'})}\n\n"
+            return
+
+        full_answer = "".join(full_answer_parts)
+        # 保存到问答历史
+        try:
+            with connection_scope() as connection:
+                QuestionAnswerRepository(connection).create(
+                    knowledge_base_id=knowledge_base_id,
+                    question=payload.question,
+                    answer=full_answer,
+                    sources=sources_data,
+                    top_k=payload.top_k,
+                )
+        except Exception:
+            logging.getLogger(__name__).exception("Failed to persist streamed answer")
+
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        sse_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

@@ -90,9 +90,15 @@ class RetrievalResponse(BaseModel):
     results: list[RetrievedChunkRead]
 
 
+class ConversationMessage(BaseModel):
+    role: str = Field(pattern=r"^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class QuestionRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)
+    conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
 
 
 class AnswerSourceRead(BaseModel):

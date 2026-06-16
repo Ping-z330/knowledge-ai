@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import axios from 'axios'
 import { message } from 'ant-design-vue'
 import {
@@ -81,6 +81,14 @@ type PaginatedResponse<T> = {
   offset: number
 }
 
+type ConversationMessage = {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources: AnswerSource[]
+  created_at: string
+}
+
 const api = axios.create({
   baseURL: '/api',
   timeout: 120000,
@@ -106,6 +114,8 @@ const loadingDocuments = ref(false)
 const loadingQuestionAnswers = ref(false)
 const creatingKnowledgeBase = ref(false)
 const asking = ref(false)
+const streaming = ref(false)
+const streamingAnswer = ref('')
 const retrieving = ref(false)
 const batchParsing = ref(false)
 const batchIndexing = ref(false)
@@ -119,6 +129,21 @@ const documentPageSize = 50
 const qaTotal = ref(0)
 const qaPage = ref(1)
 const qaPageSize = 20
+const conversation = ref<ConversationMessage[]>([])
+const convStreaming = ref(false)
+const convStreamingAnswer = ref('')
+const convInput = ref('')
+const convAsking = ref(false)
+const convMessagesRef = ref<HTMLElement | null>(null)
+
+function scrollConvToBottom() {
+  nextTick(() => {
+    const el = convMessagesRef.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+watch([conversation, convStreamingAnswer], () => scrollConvToBottom(), { deep: true })
 
 const createForm = ref({
   name: '',
@@ -249,6 +274,144 @@ function renderAnswerWithCitations(answerText: string) {
     /\[(\d+)\]/g,
     '<sup><a href="#" class="citation-link" data-citation="$1">[$1]</a></sup>',
   )
+}
+
+let convIdCounter = 0
+
+function nextConvId() {
+  convIdCounter++
+  return `conv-${Date.now()}-${convIdCounter}`
+}
+
+function buildConversationHistory(): { role: string; content: string }[] {
+  const recent = conversation.value.slice(-10)
+  return recent.map((m) => ({ role: m.role, content: m.content }))
+}
+
+const askConversation = async () => {
+  const question = convInput.value.trim()
+  if (!selectedKnowledgeBaseId.value || !question) return
+  if (indexedCount.value === 0) {
+    questionError.value = '当前知识库还没有已索引文档。请先上传、解析并索引文档。'
+    return
+  }
+
+  convAsking.value = true
+  convStreaming.value = true
+  convStreamingAnswer.value = ''
+  questionError.value = ''
+
+  // 添加用户消息
+  const userMsg: ConversationMessage = {
+    id: nextConvId(),
+    role: 'user',
+    content: question,
+    sources: [],
+    created_at: new Date().toISOString(),
+  }
+  conversation.value = [...conversation.value, userMsg]
+  convInput.value = ''
+
+  const assistantMsg: ConversationMessage = {
+    id: nextConvId(),
+    role: 'assistant',
+    content: '',
+    sources: [],
+    created_at: new Date().toISOString(),
+  }
+
+  try {
+    const token = import.meta.env.VITE_API_TOKEN
+    const response = await fetch(
+      `/api/knowledge-bases/${selectedKnowledgeBaseId.value}/questions/stream`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          question,
+          top_k: topK.value,
+          conversation_history: buildConversationHistory(),
+        }),
+      },
+    )
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      throw new Error(errorBody?.detail || `HTTP ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Stream not supported')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let sources: AnswerSource[] = []
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6)
+        try {
+          const event = JSON.parse(data)
+          if (event.type === 'sources') {
+            sources = event.sources.map((s: AnswerSource) => ({
+              citation: s.citation ?? 0,
+              vector_id: s.vector_id,
+              text: s.text,
+              score: s.score,
+              metadata: s.metadata,
+            }))
+          } else if (event.type === 'token') {
+            convStreamingAnswer.value += event.content
+          } else if (event.type === 'done') {
+            assistantMsg.content = convStreamingAnswer.value
+            assistantMsg.sources = sources
+            conversation.value = [...conversation.value, assistantMsg]
+            convStreaming.value = false
+            convStreamingAnswer.value = ''
+            await loadQuestionAnswers()
+          } else if (event.type === 'error') {
+            questionError.value = event.message || 'Stream error'
+            convStreaming.value = false
+          }
+        } catch {
+          // skip
+        }
+      }
+    }
+  } catch (error) {
+    convStreaming.value = false
+    questionError.value = error instanceof Error ? error.message : '流式请求失败'
+  } finally {
+    convAsking.value = false
+    // 处理意外中断
+    if (convStreaming.value && convStreamingAnswer.value) {
+      assistantMsg.content = convStreamingAnswer.value
+      conversation.value = [...conversation.value, assistantMsg]
+      convStreaming.value = false
+      convStreamingAnswer.value = ''
+    }
+    // 如果中断且无内容，移除占位
+    if (!convStreaming.value && !assistantMsg.content && conversation.value.at(-1)?.id === assistantMsg.id) {
+      conversation.value = conversation.value.slice(0, -1)
+    }
+  }
+}
+
+function clearConversation() {
+  conversation.value = []
+  convStreaming.value = false
+  convStreamingAnswer.value = ''
 }
 
 function handleCitationClick(event: Event) {
@@ -592,29 +755,105 @@ const askQuestion = async () => {
   }
 
   asking.value = true
+  streaming.value = true
+  streamingAnswer.value = ''
   questionError.value = ''
   answer.value = null
+
   try {
-    const { data } = await api.post<QuestionResponse>(
-      `/knowledge-bases/${selectedKnowledgeBaseId.value}/questions`,
+    const token = import.meta.env.VITE_API_TOKEN
+    const response = await fetch(
+      `/api/knowledge-bases/${selectedKnowledgeBaseId.value}/questions/stream`,
       {
-        question: question.value.trim(),
-        top_k: topK.value,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          question: question.value.trim(),
+          top_k: topK.value,
+        }),
       },
     )
-    answer.value = data
-    retrievalResults.value = data.sources.map((source) => ({
-      vector_id: source.vector_id,
-      text: source.text,
-      score: source.score,
-      metadata: source.metadata,
-    }))
-    await loadQuestionAnswers()
+
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null)
+      throw new Error(errorBody?.detail || `HTTP ${response.status}`)
+    }
+
+    const reader = response.body?.getReader()
+    if (!reader) throw new Error('Stream not supported')
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const data = line.slice(6)
+        try {
+          const event = JSON.parse(data)
+          if (event.type === 'sources') {
+            retrievalResults.value = event.sources.map((s: AnswerSource) => ({
+              vector_id: s.vector_id,
+              text: s.text,
+              score: s.score,
+              metadata: s.metadata,
+            }))
+          } else if (event.type === 'token') {
+            streamingAnswer.value += event.content
+          } else if (event.type === 'done') {
+            answer.value = {
+              question: question.value.trim(),
+              answer: streamingAnswer.value,
+              sources: retrievalResults.value.map((r, i) => ({
+                citation: i + 1,
+                vector_id: r.vector_id,
+                text: r.text,
+                score: r.score,
+                metadata: r.metadata,
+              })),
+            }
+            streaming.value = false
+            await loadQuestionAnswers()
+          } else if (event.type === 'error') {
+            questionError.value = event.message || 'Stream error'
+            streaming.value = false
+          }
+        } catch {
+          // skip unparseable lines
+        }
+      }
+    }
   } catch (error) {
     retrievalResults.value = []
-    questionError.value = extractApiError(error)
+    streaming.value = false
+    questionError.value = error instanceof Error ? error.message : '流式请求失败'
   } finally {
     asking.value = false
+    if (streaming.value && !questionError.value) {
+      // 流意外结束但有内容，固化回答
+      answer.value = {
+        question: question.value.trim(),
+        answer: streamingAnswer.value || '（回答中断）',
+        sources: retrievalResults.value.map((r, i) => ({
+          citation: i + 1,
+          vector_id: r.vector_id,
+          text: r.text,
+          score: r.score,
+          metadata: r.metadata,
+        })),
+      }
+      streaming.value = false
+    }
   }
 }
 
@@ -1017,18 +1256,19 @@ onUnmounted(() => {
                   </div>
                 </div>
 
-                <div v-if="answer" class="answer-block">
+                <div v-if="answer || streaming" class="answer-block">
                   <div class="answer-label">
                     <ApiOutlined />
                     <span>Answer</span>
+                    <span v-if="streaming" class="streaming-dot"></span>
                   </div>
                   <p
                     class="answer-text"
-                    v-html="renderAnswerWithCitations(answer.answer)"
+                    v-html="renderAnswerWithCitations(streaming ? streamingAnswer : answer?.answer || '')"
                     @click="handleCitationClick"
                   ></p>
 
-                  <div class="sources">
+                  <div v-if="!streaming && answer" class="sources">
                     <h4>引用来源</h4>
                     <article
                       v-for="source in answer.sources"
@@ -1052,6 +1292,98 @@ onUnmounted(() => {
                 <div v-else class="empty-answer">
                   <CloudUploadOutlined />
                   <p>完成文档索引后，可以先检索命中片段，再查看回答与引用来源。</p>
+                </div>
+              </a-tab-pane>
+
+              <a-tab-pane key="conversation" tab="对话">
+                <div class="conversation-box">
+                  <div class="conv-toolbar">
+                    <span class="conv-count" v-if="conversation.length">
+                      {{ conversation.length }} 条消息
+                    </span>
+                    <a-button
+                      size="small"
+                      :disabled="!conversation.length && !convStreaming"
+                      @click="clearConversation"
+                    >
+                      清空对话
+                    </a-button>
+                  </div>
+
+                  <div class="conv-messages" ref="convMessagesRef">
+                    <a-empty
+                      v-if="!conversation.length && !convStreaming"
+                      description="开始多轮对话，LLM 会记住前面的上下文"
+                    />
+
+                    <div
+                      v-for="msg in conversation"
+                      :key="msg.id"
+                      class="conv-bubble"
+                      :class="msg.role"
+                    >
+                      <div class="conv-role">
+                        {{ msg.role === 'user' ? '你' : 'Assistant' }}
+                      </div>
+                      <div class="conv-content">
+                        <p v-if="msg.role === 'user'">{{ msg.content }}</p>
+                        <p
+                          v-else
+                          v-html="renderAnswerWithCitations(msg.content)"
+                          @click="handleCitationClick"
+                        ></p>
+                      </div>
+                      <div
+                        v-if="msg.role === 'assistant' && msg.sources.length"
+                        class="conv-sources"
+                      >
+                        <a-collapse :bordered="false">
+                          <a-collapse-panel header="引用来源 ({{ msg.sources.length }} 条)">
+                            <div
+                              v-for="source in msg.sources"
+                              :key="source.vector_id"
+                              class="conv-source-item"
+                              :data-source-citation="source.citation"
+                            >
+                              <a-tag color="blue">[{{ source.citation }}]</a-tag>
+                              <span>{{ source.metadata.filename || source.metadata.source_label }}</span>
+                              <small v-if="source.score">score {{ source.score.toFixed(3) }}</small>
+                              <p>{{ source.text }}</p>
+                            </div>
+                          </a-collapse-panel>
+                        </a-collapse>
+                      </div>
+                    </div>
+
+                    <!-- 流式生成中的 assistant 消息 -->
+                    <div v-if="convStreaming" class="conv-bubble assistant">
+                      <div class="conv-role">
+                        Assistant
+                        <span class="streaming-dot"></span>
+                      </div>
+                      <div class="conv-content">
+                        <p v-html="renderAnswerWithCitations(convStreamingAnswer)"></p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="conv-input-row">
+                    <a-textarea
+                      v-model:value="convInput"
+                      :rows="2"
+                      placeholder="输入追问…"
+                      :disabled="convAsking"
+                      @pressEnter="askConversation"
+                    />
+                    <a-button
+                      type="primary"
+                      :loading="convAsking"
+                      :disabled="!selectedKnowledgeBaseId || !convInput.trim() || indexedCount === 0"
+                      @click="askConversation"
+                    >
+                      <template #icon><SendOutlined /></template>
+                    </a-button>
+                  </div>
                 </div>
               </a-tab-pane>
 

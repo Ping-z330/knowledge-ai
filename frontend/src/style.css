@@ -568,6 +568,20 @@ h4 {
   text-transform: uppercase;
 }
 
+.streaming-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background: #d8f36b;
+  border-radius: 50%;
+  animation: streaming-pulse 1s ease infinite;
+}
+
+@keyframes streaming-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
 .answer-text {
   color: #f7fbf4;
   font-size: 15px;
@@ -596,6 +610,141 @@ h4 {
     background: rgba(216, 243, 107, 0.18);
     border-color: rgba(216, 243, 107, 0.55);
   }
+}
+
+/* Conversation UI */
+.conversation-box {
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+}
+
+.conv-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.conv-count {
+  color: #748178;
+  font-size: 12px;
+}
+
+.conv-messages {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.conv-bubble {
+  margin-bottom: 14px;
+}
+
+.conv-role {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 720;
+  color: #65726c;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.conv-bubble.assistant .conv-role {
+  color: #2f6f5e;
+}
+
+.conv-content {
+  padding: 10px 14px;
+  border-radius: 8px;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.conv-bubble.user .conv-content {
+  color: #f2f5ef;
+  background: #15231f;
+}
+
+.conv-bubble.assistant .conv-content {
+  color: #1f2a25;
+  background: #f0f4ee;
+  border: 1px solid #dde4db;
+}
+
+.conv-content p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.conv-content .citation-link {
+  color: #2f6f5e;
+  font-weight: 720;
+}
+
+.conv-bubble.user .conv-content .citation-link {
+  color: #d8f36b;
+}
+
+.conv-sources {
+  margin-top: 6px;
+  padding: 0 4px;
+}
+
+.conv-sources .ant-collapse {
+  background: transparent;
+  border: none;
+}
+
+.conv-sources .ant-collapse-header {
+  font-size: 11px !important;
+  color: #748178 !important;
+  padding: 4px 0 !important;
+}
+
+.conv-source-item {
+  padding: 8px;
+  margin-bottom: 6px;
+  background: #fbfcfa;
+  border: 1px solid #e1e8e3;
+  border-radius: 6px;
+}
+
+.conv-source-item span {
+  font-size: 12px;
+  font-weight: 720;
+  color: #1f2a25;
+}
+
+.conv-source-item small {
+  margin-left: 8px;
+  color: #8a968f;
+  font-size: 11px;
+}
+
+.conv-source-item p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #4e5d56;
+  line-height: 1.55;
+}
+
+.conv-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e3e9e5;
+}
+
+.conv-input-row .ant-btn {
+  flex-shrink: 0;
 }
 
 .sources {
