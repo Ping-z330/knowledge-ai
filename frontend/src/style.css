@@ -277,20 +277,34 @@ h4 {
   gap: 8px;
 }
 
+.panel-actions .ant-btn {
+  border-color: rgba(35, 48, 43, 0.14);
+}
+
+.panel-actions .ant-btn-primary {
+  box-shadow: 0 8px 20px rgba(47, 111, 94, 0.12);
+}
+
+.icon-only-button {
+  width: 32px;
+  min-width: 32px;
+  padding-inline: 0;
+}
+
 .upload-zone {
   margin-bottom: 16px;
 }
 
 .document-toolbar {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr) auto;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(160px, 0.7fr) auto;
   gap: 10px;
   align-items: center;
   margin-bottom: 14px;
 }
 
-.document-toolbar .ant-segmented {
-  min-width: 0;
+.document-filter-select {
+  width: 100%;
 }
 
 .document-match-count {
@@ -298,6 +312,10 @@ h4 {
   font-size: 12px;
   text-align: right;
   white-space: nowrap;
+}
+
+.document-match-count-muted {
+  opacity: 0.78;
 }
 
 .document-list {
@@ -345,18 +363,27 @@ h4 {
   color: #b42318 !important;
 }
 
-.document-status {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  justify-content: flex-end;
-}
-
 .document-actions {
   display: flex;
   flex-wrap: nowrap;
   justify-content: flex-end;
   gap: 6px;
+}
+
+.document-status-pill.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-inline-end: 0;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1;
+}
+
+.document-status-pill .anticon {
+  font-size: 12px;
 }
 
 .document-actions .ant-btn {
@@ -393,6 +420,18 @@ h4 {
   margin-top: 12px;
 }
 
+.qa-tabs {
+  margin-top: -4px;
+}
+
+.qa-tabs .ant-tabs-nav {
+  margin-bottom: 14px;
+}
+
+.qa-tabs .ant-tabs-tab {
+  padding-inline: 0 14px;
+}
+
 .debug-block {
   margin-top: 16px;
   padding-top: 16px;
@@ -407,16 +446,29 @@ h4 {
   margin-bottom: 10px;
 }
 
+.debug-summary {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.debug-summary-line {
+  color: #55635b;
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: right;
+}
+
 .debug-head h4 {
   margin: 0;
   color: #1b2b25;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .debug-head p {
   margin: 3px 0 0;
   color: #748178;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .debug-list {
@@ -425,7 +477,7 @@ h4 {
 }
 
 .debug-row {
-  padding: 12px;
+  padding: 10px 12px;
   background: #fbfcfa;
   border: 1px solid #e1e8e3;
   border-radius: 8px;
@@ -457,12 +509,19 @@ h4 {
 
 .debug-meta strong {
   color: #1f2a25;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .debug-meta small {
   color: #748178;
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.debug-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
 }
 
 .debug-details {
@@ -481,6 +540,13 @@ h4 {
   margin-top: 8px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.debug-details mark {
+  padding: 0 2px;
+  color: #15231f;
+  background: #d8f36b;
+  border-radius: 2px;
 }
 
 .answer-block {
@@ -507,6 +573,29 @@ h4 {
   font-size: 15px;
   line-height: 1.72;
   white-space: pre-wrap;
+}
+
+.citation-link {
+  color: #d8f36b;
+  text-decoration: none;
+  font-weight: 700;
+  transition: color 0.15s ease;
+}
+
+.citation-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.source-flash {
+  animation: source-flash-anim 0.6s ease 2;
+}
+
+@keyframes source-flash-anim {
+  50% {
+    background: rgba(216, 243, 107, 0.18);
+    border-color: rgba(216, 243, 107, 0.55);
+  }
 }
 
 .sources {
@@ -569,6 +658,12 @@ h4 {
   border-top: 1px solid #e3e9e5;
 }
 
+.history-block-tab {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .history-head {
   display: flex;
   align-items: center;
@@ -580,13 +675,13 @@ h4 {
 .history-head h4 {
   margin: 0;
   color: #1b2b25;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .history-head p {
   margin: 3px 0 0;
   color: #748178;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .history-list {
@@ -599,7 +694,7 @@ h4 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px;
+  padding: 9px 10px;
   cursor: pointer;
   background: #fbfcfa;
   border: 1px solid #e1e8e3;
@@ -635,19 +730,25 @@ h4 {
 
 .history-main h5 {
   color: #20352e;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .history-main p {
   margin-top: 3px;
   color: #647269;
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .history-main small {
   margin-top: 5px;
   color: #8a968f;
-  font-size: 11px;
+  font-size: 10px;
+}
+
+.pagination-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
 }
 
 .ant-empty-description {
@@ -708,7 +809,6 @@ h4 {
     text-align: left;
   }
 
-  .document-status,
   .document-actions {
     justify-content: flex-start;
   }

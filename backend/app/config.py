@@ -18,9 +18,12 @@ load_dotenv(BACKEND_DIR / ".env", override=False)
 # 定义配置类
 class Settings(BaseModel):
     app_name: str = "Knowledge Agent API"
+    api_token: str = ""
     database_url: str
     storage_dir: Path
     chroma_dir: Path
+    max_upload_bytes: int = 50 * 1024 * 1024
+    embedding_batch_size: int = 20
     embedding_base_url: str
     embedding_api_key: str
     embedding_model: str
@@ -60,9 +63,12 @@ def _env_path(name: str, default: Path) -> Path:
 @lru_cache
 def get_settings() -> Settings:
     return Settings(
+        api_token=os.getenv("API_TOKEN", ""),
         database_url=os.getenv("DATABASE_URL", _default_database_url()),
         storage_dir=_env_path("STORAGE_DIR", _default_storage_dir()),
         chroma_dir=_env_path("CHROMA_DIR", _default_chroma_dir()),
+        max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024))),
+        embedding_batch_size=int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
         embedding_base_url=os.getenv("EMBEDDING_BASE_URL", ""),
         embedding_api_key=os.getenv("EMBEDDING_API_KEY", ""),
         embedding_model=os.getenv("EMBEDDING_MODEL", ""),

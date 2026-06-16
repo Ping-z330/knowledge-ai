@@ -1,7 +1,8 @@
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
 
+from ..auth import require_api_token
 from ..database import connection_scope
 from ..repositories.chunks import ChunkRepository
 from ..repositories.documents import DocumentRepository
@@ -14,6 +15,7 @@ from ..schemas import (
     KnowledgeBaseCreate,
     KnowledgeBaseRead,
     KnowledgeBaseUpdate,
+    PaginatedResponse,
     QuestionAnswerRead,
     QuestionRequest,
     QuestionResponse,
@@ -32,7 +34,11 @@ from ..services.indexing import IndexingError, delete_document_vectors, index_do
 from ..services.retrieval import RetrievalError, retrieve_chunks
 
 # 创建API路由器，所有路由都以/api/knowledge-bases为前缀，并且属于knowledge-bases标签
-router = APIRouter(prefix="/api/knowledge-bases", tags=["knowledge-bases"])
+router = APIRouter(
+    prefix="/api/knowledge-bases",
+    tags=["knowledge-bases"],
+    dependencies=[Depends(require_api_token)],
+)
 
 
 def _source_to_dict(source: object) -> dict:
@@ -165,13 +171,23 @@ def delete_knowledge_base(knowledge_base_id: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/{knowledge_base_id}/documents", response_model=list[DocumentRead])
-def list_documents(knowledge_base_id: str) -> list[dict]:
+@router.get(
+    "/{knowledge_base_id}/documents",
+    response_model=PaginatedResponse[DocumentRead],
+)
+def list_documents(
+    knowledge_base_id: str,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
     with connection_scope() as connection:
         knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
         if knowledge_base is None:
             raise HTTPException(status_code=404, detail="Knowledge base not found")
-        return DocumentRepository(connection).list_for_knowledge_base(knowledge_base_id)
+        repo = DocumentRepository(connection)
+        items = repo.list_for_knowledge_base(knowledge_base_id, limit=limit, offset=offset)
+        total = repo.count_for_knowledge_base(knowledge_base_id)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.post(
@@ -470,16 +486,21 @@ def answer_from_knowledge_base(
 
 @router.get(
     "/{knowledge_base_id}/question-answers",
-    response_model=list[QuestionAnswerRead],
+    response_model=PaginatedResponse[QuestionAnswerRead],
 )
-def list_question_answers(knowledge_base_id: str) -> list[dict]:
+def list_question_answers(
+    knowledge_base_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
     with connection_scope() as connection:
         knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
         if knowledge_base is None:
             raise HTTPException(status_code=404, detail="Knowledge base not found")
-        return QuestionAnswerRepository(connection).list_for_knowledge_base(
-            knowledge_base_id,
-        )
+        repo = QuestionAnswerRepository(connection)
+        items = repo.list_for_knowledge_base(knowledge_base_id, limit=limit, offset=offset)
+        total = repo.count_for_knowledge_base(knowledge_base_id)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.delete(

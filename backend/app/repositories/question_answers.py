@@ -26,6 +26,7 @@ class QuestionAnswerRepository:
         knowledge_base_id: str,
         *,
         limit: int = 20,
+        offset: int = 0,
     ) -> list[dict]:
         rows = self.connection.execute(
             """
@@ -40,9 +41,9 @@ class QuestionAnswerRepository:
             FROM question_answers
             WHERE knowledge_base_id = ?
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
             """,
-            (knowledge_base_id, limit),
+            (knowledge_base_id, limit, offset),
         ).fetchall()
         return [_to_dict(row) for row in rows if row is not None]
 
@@ -102,6 +103,13 @@ class QuestionAnswerRepository:
         if created is None:
             raise RuntimeError("Failed to create question answer")
         return created
+
+    def count_for_knowledge_base(self, knowledge_base_id: str) -> int:
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS cnt FROM question_answers WHERE knowledge_base_id = ?",
+            (knowledge_base_id,),
+        ).fetchone()
+        return row["cnt"] if row else 0
 
     def delete(self, knowledge_base_id: str, answer_id: str) -> bool:
         cursor = self.connection.execute(

@@ -67,21 +67,23 @@ class QuestionAnswerApiTest(unittest.TestCase):
             self.assertEqual(answer_response["answer"], "系统支持知识库问答。[1]")
 
             history = router_module.list_question_answers(
-                knowledge_base["id"],
+                knowledge_base["id"], limit=20, offset=0,
             )
-            self.assertEqual(len(history), 1)
-            self.assertEqual(history[0]["question"], "系统支持什么？")
-            self.assertEqual(history[0]["answer"], "系统支持知识库问答。[1]")
-            self.assertEqual(history[0]["top_k"], 3)
-            self.assertEqual(history[0]["sources"][0]["citation"], 1)
+            self.assertEqual(len(history["items"]), 1)
+            self.assertEqual(history["total"], 1)
+            self.assertEqual(history["items"][0]["question"], "系统支持什么？")
+            self.assertEqual(history["items"][0]["answer"], "系统支持知识库问答。[1]")
+            self.assertEqual(history["items"][0]["top_k"], 3)
+            self.assertEqual(history["items"][0]["sources"][0]["citation"], 1)
 
             delete_response = router_module.delete_question_answer(
                 knowledge_base["id"],
-                history[0]["id"],
+                history["items"][0]["id"],
             )
             self.assertEqual(delete_response.status_code, 204)
 
-            self.assertEqual(router_module.list_question_answers(knowledge_base["id"]), [])
+            remaining = router_module.list_question_answers(knowledge_base["id"], limit=20, offset=0)
+            self.assertEqual(remaining["items"], [])
         finally:
             router_module.answer_question = original_answer_question
 

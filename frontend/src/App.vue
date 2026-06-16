@@ -7,12 +7,14 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloudUploadOutlined,
+  ExclamationCircleOutlined,
   DatabaseOutlined,
   DeleteOutlined,
   FileSearchOutlined,
   InboxOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SyncOutlined,
   SendOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
@@ -72,8 +74,19 @@ type RetrievalResponse = {
   results: RetrievalResult[]
 }
 
+type PaginatedResponse<T> = {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+}
+
 const api = axios.create({
   baseURL: '/api',
+  timeout: 120000,
+  headers: import.meta.env.VITE_API_TOKEN
+    ? { Authorization: `Bearer ${import.meta.env.VITE_API_TOKEN}` }
+    : {},
 })
 
 const knowledgeBases = ref<KnowledgeBase[]>([])
@@ -97,8 +110,15 @@ const retrieving = ref(false)
 const batchParsing = ref(false)
 const batchIndexing = ref(false)
 const reindexingAll = ref(false)
+const qaActiveTab = ref('debug')
 const busyDocumentId = ref('')
 const busyAnswerId = ref('')
+const documentTotal = ref(0)
+const documentPage = ref(1)
+const documentPageSize = 50
+const qaTotal = ref(0)
+const qaPage = ref(1)
+const qaPageSize = 20
 
 const createForm = ref({
   name: '',
@@ -173,11 +193,138 @@ function getResultSubtitle(metadata: Record<string, unknown>) {
   return parts.join(' · ')
 }
 
-const statusTone = (status: string) => {
-  if (status === 'indexed' || status === 'parsed') return 'success'
-  if (status === 'failed') return 'error'
-  if (status === 'pending' || status === 'uploaded' || status === 'running') return 'processing'
-  return 'default'
+function getResultFilename(metadata: Record<string, unknown>) {
+  const value = metadata.filename || metadata.source_label
+  return value ? String(value) : ''
+}
+
+function getResultSectionTitle(metadata: Record<string, unknown>) {
+  return metadata.section_title ? String(metadata.section_title) : ''
+}
+
+function getResultChunkLabel(metadata: Record<string, unknown>) {
+  return typeof metadata.chunk_index === 'number' ? `chunk ${metadata.chunk_index + 1}` : ''
+}
+
+const retrievalQuery = computed(() => question.value.trim())
+
+const retrievalSummary = computed(() => {
+  if (!retrievalQuery.value) return '尚未发起检索'
+  return `Query: ${retrievalQuery.value} · top_k: ${topK.value} · 命中 ${retrievalResults.value.length} 条`
+})
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function highlightText(text: string, query: string) {
+  const cleanQuery = query.trim()
+  if (!cleanQuery) return escapeHtml(text)
+
+  const terms = Array.from(
+    new Set(
+      cleanQuery
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 6),
+    ),
+  )
+  if (!terms.length) return escapeHtml(text)
+
+  const pattern = new RegExp(`(${terms.map((term) => escapeRegExp(term)).join('|')})`, 'gi')
+  return escapeHtml(text).replace(pattern, '<mark>$1</mark>')
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function renderAnswerWithCitations(answerText: string) {
+  return answerText.replace(
+    /\[(\d+)\]/g,
+    '<sup><a href="#" class="citation-link" data-citation="$1">[$1]</a></sup>',
+  )
+}
+
+function handleCitationClick(event: Event) {
+  const target = event.target as HTMLElement
+  if (!target.classList.contains('citation-link')) return
+  event.preventDefault()
+  const citation = target.dataset.citation
+  const sourceEl = document.querySelector(`[data-source-citation="${citation}"]`)
+  if (sourceEl) {
+    sourceEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    sourceEl.classList.add('source-flash')
+    setTimeout(() => sourceEl.classList.remove('source-flash'), 2000)
+  }
+}
+
+type DocumentStatusTone = 'default' | 'processing' | 'success' | 'error'
+
+type DocumentStatusMeta = {
+  label: string
+  tone: DocumentStatusTone
+  icon: typeof CheckCircleOutlined | typeof ClockCircleOutlined | typeof SyncOutlined | typeof ExclamationCircleOutlined
+  detail: string
+}
+
+const getDocumentStatusMeta = (item: DocumentItem): DocumentStatusMeta => {
+  if (item.parse_status === 'failed' || item.index_status === 'failed') {
+    return {
+      label: '失败',
+      tone: 'error',
+      icon: ExclamationCircleOutlined,
+      detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+    }
+  }
+
+  if (item.parse_status === 'running') {
+    return {
+      label: '解析中',
+      tone: 'processing',
+      icon: SyncOutlined,
+      detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+    }
+  }
+
+  if (item.index_status === 'running') {
+    return {
+      label: '索引中',
+      tone: 'processing',
+      icon: SyncOutlined,
+      detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+    }
+  }
+
+  if (item.index_status === 'indexed') {
+    return {
+      label: '已就绪',
+      tone: 'success',
+      icon: CheckCircleOutlined,
+      detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+    }
+  }
+
+  if (item.parse_status === 'parsed') {
+    return {
+      label: '待索引',
+      tone: 'default',
+      icon: ClockCircleOutlined,
+      detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+    }
+  }
+
+  return {
+    label: '待解析',
+    tone: 'default',
+    icon: ClockCircleOutlined,
+    detail: `解析: ${item.parse_status} · 索引: ${item.index_status}`,
+  }
 }
 
 const formatDate = (value: string) =>
@@ -206,15 +353,22 @@ const loadKnowledgeBases = async () => {
 const loadDocuments = async () => {
   if (!selectedKnowledgeBaseId.value) {
     documents.value = []
+    stopDocumentPolling()
     return
   }
 
   loadingDocuments.value = true
   try {
-    const { data } = await api.get<DocumentItem[]>(
+    const offset = (documentPage.value - 1) * documentPageSize
+    const { data } = await api.get<PaginatedResponse<DocumentItem>>(
       `/knowledge-bases/${selectedKnowledgeBaseId.value}/documents`,
+      { params: { limit: documentPageSize, offset } },
     )
-    documents.value = data
+    documents.value = data.items
+    documentTotal.value = data.total
+    if (hasRunningDocuments.value) {
+      startDocumentPolling()
+    }
   } finally {
     loadingDocuments.value = false
   }
@@ -228,10 +382,13 @@ const loadQuestionAnswers = async () => {
 
   loadingQuestionAnswers.value = true
   try {
-    const { data } = await api.get<QuestionAnswer[]>(
+    const offset = (qaPage.value - 1) * qaPageSize
+    const { data } = await api.get<PaginatedResponse<QuestionAnswer>>(
       `/knowledge-bases/${selectedKnowledgeBaseId.value}/question-answers`,
+      { params: { limit: qaPageSize, offset } },
     )
-    questionAnswers.value = data
+    questionAnswers.value = data.items
+    qaTotal.value = data.total
   } finally {
     loadingQuestionAnswers.value = false
   }
@@ -242,7 +399,19 @@ const selectKnowledgeBase = async (id: string) => {
   answer.value = null
   retrievalResults.value = []
   questionError.value = ''
+  documentPage.value = 1
+  qaPage.value = 1
   await loadDocuments()
+  await loadQuestionAnswers()
+}
+
+const goDocumentPage = async (page: number) => {
+  documentPage.value = page
+  await loadDocuments()
+}
+
+const goQaPage = async (page: number) => {
+  qaPage.value = page
   await loadQuestionAnswers()
 }
 
@@ -384,6 +553,25 @@ const indexDocument = async (item: DocumentItem) => {
 
 let documentPollTimer: number | undefined
 
+function startDocumentPolling() {
+  if (documentPollTimer !== undefined) return
+  documentPollTimer = window.setInterval(() => {
+    if (!selectedKnowledgeBaseId.value || loadingDocuments.value) return
+    if (!hasRunningDocuments.value) {
+      stopDocumentPolling()
+      return
+    }
+    loadDocuments()
+  }, 2000)
+}
+
+function stopDocumentPolling() {
+  if (documentPollTimer !== undefined) {
+    window.clearInterval(documentPollTimer)
+    documentPollTimer = undefined
+  }
+}
+
 const deleteDocument = async (item: DocumentItem) => {
   busyDocumentId.value = item.id
   try {
@@ -477,17 +665,10 @@ const extractApiError = (error: unknown) => {
 
 onMounted(() => {
   loadKnowledgeBases()
-  documentPollTimer = window.setInterval(() => {
-    if (selectedKnowledgeBaseId.value && hasRunningDocuments.value && !loadingDocuments.value) {
-      loadDocuments()
-    }
-  }, 2000)
 })
 
 onUnmounted(() => {
-  if (documentPollTimer !== undefined) {
-    window.clearInterval(documentPollTimer)
-  }
+  stopDocumentPolling()
 })
 </script>
 
@@ -614,9 +795,11 @@ onUnmounted(() => {
                 >
                   重建索引
                 </a-button>
-                <a-button @click="loadDocuments">
+                <a-tooltip title="刷新文档列表">
+                  <a-button class="icon-only-button" @click="loadDocuments">
                   <template #icon><ReloadOutlined /></template>
-                </a-button>
+                  </a-button>
+                </a-tooltip>
               </div>
             </div>
 
@@ -632,11 +815,13 @@ onUnmounted(() => {
                 allow-clear
                 placeholder="搜索文件名或类型"
               />
-              <a-segmented
+              <a-select
                 v-model:value="documentFilter"
+                class="document-filter-select"
                 :options="documentFilterOptions"
+                :dropdown-match-select-width="false"
               />
-              <span class="document-match-count">
+              <span class="document-match-count document-match-count-muted">
                 {{ filteredDocuments.length }} / {{ documents.length }}
               </span>
             </div>
@@ -655,14 +840,12 @@ onUnmounted(() => {
                     </div>
                   </div>
 
-                  <div class="document-status">
-                    <a-tag :color="statusTone(item.parse_status)">
-                      parse: {{ item.parse_status }}
+                  <a-tooltip :title="getDocumentStatusMeta(item).detail">
+                    <a-tag class="document-status-pill" :color="getDocumentStatusMeta(item).tone">
+                      <component :is="getDocumentStatusMeta(item).icon" />
+                      {{ getDocumentStatusMeta(item).label }}
                     </a-tag>
-                    <a-tag :color="statusTone(item.index_status)">
-                      index: {{ item.index_status }}
-                    </a-tag>
-                  </div>
+                  </a-tooltip>
 
                   <div class="document-actions">
                     <a-tooltip title="解析文档">
@@ -705,6 +888,17 @@ onUnmounted(() => {
                   v-else-if="!filteredDocuments.length"
                   description="没有匹配的文档"
                 />
+
+                <div v-if="documentTotal > documentPageSize" class="pagination-row">
+                  <a-pagination
+                    :current="documentPage"
+                    :page-size="documentPageSize"
+                    :total="documentTotal"
+                    :show-size-changer="false"
+                    size="small"
+                    @change="goDocumentPage"
+                  />
+                </div>
               </div>
             </a-spin>
           </section>
@@ -721,166 +915,206 @@ onUnmounted(() => {
               </a-tag>
             </div>
 
-            <div class="ask-box">
-              <a-textarea
-                v-model:value="question"
-                :rows="4"
-                placeholder="输入问题，例如：这个系统支持哪些文档格式？"
-              />
-              <div class="ask-actions">
-                <a-input-number v-model:value="topK" :min="1" :max="20" />
-                <div class="ask-buttons">
-                  <a-button
-                    :loading="retrieving"
-                    :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
-                    @click="retrieveOnly"
-                  >
-                    <template #icon><SearchOutlined /></template>
-                    仅检索
-                  </a-button>
-                  <a-button
-                    type="primary"
-                    :loading="asking"
-                    :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
-                    @click="askQuestion"
-                  >
-                    <template #icon><SendOutlined /></template>
-                    提问
-                  </a-button>
-                </div>
-              </div>
-            </div>
-
-            <a-alert
-              v-if="selectedKnowledgeBaseId && indexedCount === 0"
-              class="question-alert"
-              type="warning"
-              show-icon
-              message="当前知识库还没有已索引文档。请先上传、解析并索引文档。"
-            />
-
-            <a-alert
-              v-if="questionError"
-              class="question-alert"
-              type="error"
-              show-icon
-              :message="questionError"
-            />
-
-            <div class="debug-block">
-              <div class="debug-head">
-                <div>
-                  <h4>检索结果</h4>
-                  <p>看命中了哪些片段、分数如何、上下文是否足够</p>
-                </div>
-                <span class="document-match-count">
-                  {{ retrievalResults.length }} 条
-                </span>
-              </div>
-
-              <a-empty
-                v-if="!retrievalResults.length"
-                description="点击“仅检索”或“提问”查看命中片段"
-              />
-
-              <div v-else class="debug-list">
-                <article v-for="(result, index) in retrievalResults" :key="result.vector_id" class="debug-row">
-                  <div class="debug-row-head">
-                    <div class="debug-rank">
-                      <span>#{{ index + 1 }}</span>
-                      <a-tag color="blue" v-if="result.score !== null">
-                        score {{ result.score.toFixed(3) }}
-                      </a-tag>
-                    </div>
-                    <div class="debug-meta">
-                      <strong>{{ getResultTitle(result.metadata) }}</strong>
-                      <small>{{ getResultSubtitle(result.metadata) }}</small>
-                    </div>
-                  </div>
-
-                  <details class="debug-details">
-                    <summary>查看片段</summary>
-                    <p>{{ result.text }}</p>
-                  </details>
-                </article>
-              </div>
-            </div>
-
-            <div v-if="answer" class="answer-block">
-              <div class="answer-label">
-                <ApiOutlined />
-                <span>Answer</span>
-              </div>
-              <p class="answer-text">{{ answer.answer }}</p>
-
-              <div class="sources">
-                <h4>引用来源</h4>
-                <article v-for="source in answer.sources" :key="source.vector_id">
-                  <div class="source-head">
-                    <a-tag color="blue">[{{ source.citation }}]</a-tag>
-                    <span>{{ source.metadata.filename || source.metadata.source_label }}</span>
-                    <small v-if="source.score">score {{ source.score.toFixed(3) }}</small>
-                  </div>
-                  <p>{{ source.text }}</p>
-                </article>
-                <a-empty
-                  v-if="!answer.sources.length"
-                  description="没有可引用的来源"
-                />
-              </div>
-            </div>
-
-            <div v-else class="empty-answer">
-              <CloudUploadOutlined />
-              <p>完成文档索引后，可以先检索命中片段，再查看回答与引用来源。</p>
-            </div>
-
-            <div class="history-block">
-              <div class="history-head">
-                <div>
-                  <h4>最近问答</h4>
-                  <p>保存当前知识库的问答记录</p>
-                </div>
-                <a-button size="small" @click="loadQuestionAnswers">
-                  <template #icon><ReloadOutlined /></template>
-                </a-button>
-              </div>
-
-              <a-spin :spinning="loadingQuestionAnswers">
-                <div class="history-list">
-                  <article
-                    v-for="item in questionAnswers"
-                    :key="item.id"
-                    class="history-row"
-                    @click="selectQuestionAnswer(item)"
-                  >
-                    <div class="history-main">
-                      <ClockCircleOutlined />
-                      <div>
-                        <h5>{{ item.question }}</h5>
-                        <p>{{ item.answer }}</p>
-                        <small>{{ formatDate(item.created_at) }} · top {{ item.top_k }}</small>
-                      </div>
-                    </div>
-                    <a-popconfirm title="删除这条问答历史？" @confirm.stop="deleteQuestionAnswer(item)">
+            <a-tabs v-model:activeKey="qaActiveTab" class="qa-tabs">
+              <a-tab-pane key="debug" tab="调试面板">
+                <div class="ask-box">
+                  <a-textarea
+                    v-model:value="question"
+                    :rows="4"
+                    placeholder="输入问题，例如：这个系统支持哪些文档格式？"
+                  />
+                  <div class="ask-actions">
+                    <a-input-number v-model:value="topK" :min="1" :max="20" />
+                    <div class="ask-buttons">
                       <a-button
-                        size="small"
-                        danger
-                        :loading="busyAnswerId === item.id"
-                        @click.stop
+                        :loading="retrieving"
+                        :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
+                        @click="retrieveOnly"
                       >
-                        <template #icon><DeleteOutlined /></template>
+                        <template #icon><SearchOutlined /></template>
+                        仅检索
                       </a-button>
-                    </a-popconfirm>
-                  </article>
+                      <a-button
+                        type="primary"
+                        :loading="asking"
+                        :disabled="!selectedKnowledgeBaseId || !question.trim() || indexedCount === 0"
+                        @click="askQuestion"
+                      >
+                        <template #icon><SendOutlined /></template>
+                        提问
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+
+                <a-alert
+                  v-if="selectedKnowledgeBaseId && indexedCount === 0"
+                  class="question-alert"
+                  type="warning"
+                  show-icon
+                  message="当前知识库还没有已索引文档。请先上传、解析并索引文档。"
+                />
+
+                <a-alert
+                  v-if="questionError"
+                  class="question-alert"
+                  type="error"
+                  show-icon
+                  :message="questionError"
+                />
+
+                <div class="debug-block">
+                  <div class="debug-head">
+                    <div>
+                      <h4>检索结果</h4>
+                      <p>看命中了哪些片段、分数如何、上下文是否足够</p>
+                    </div>
+                    <div class="debug-summary">
+                      <span class="debug-summary-line">{{ retrievalSummary }}</span>
+                      <span class="document-match-count document-match-count-muted">
+                        {{ retrievalResults.length }} 条
+                      </span>
+                    </div>
+                  </div>
 
                   <a-empty
-                    v-if="!questionAnswers.length"
-                    description="还没有问答历史"
+                    v-if="!retrievalResults.length"
+                    description="点击“仅检索”或“提问”查看命中片段"
                   />
+
+                  <div v-else class="debug-list">
+                    <article v-for="(result, index) in retrievalResults" :key="result.vector_id" class="debug-row">
+                      <div class="debug-row-head">
+                        <div class="debug-rank">
+                          <span>#{{ index + 1 }}</span>
+                          <a-tag color="blue" v-if="result.score !== null">
+                            score {{ result.score.toFixed(3) }}
+                          </a-tag>
+                        </div>
+                        <div class="debug-meta">
+                          <strong>{{ getResultTitle(result.metadata) }}</strong>
+                          <small>{{ getResultSubtitle(result.metadata) }}</small>
+                        </div>
+                      </div>
+
+                      <div class="debug-metadata">
+                        <a-tag v-if="getResultFilename(result.metadata)" color="green">
+                          {{ getResultFilename(result.metadata) }}
+                        </a-tag>
+                        <a-tag v-if="getResultSectionTitle(result.metadata)" color="default">
+                          {{ getResultSectionTitle(result.metadata) }}
+                        </a-tag>
+                        <a-tag v-if="getResultChunkLabel(result.metadata)" color="gold">
+                          {{ getResultChunkLabel(result.metadata) }}
+                        </a-tag>
+                      </div>
+
+                      <details class="debug-details">
+                        <summary>查看片段</summary>
+                        <p v-html="highlightText(result.text, retrievalQuery)"></p>
+                      </details>
+                    </article>
+                  </div>
                 </div>
-              </a-spin>
-            </div>
+
+                <div v-if="answer" class="answer-block">
+                  <div class="answer-label">
+                    <ApiOutlined />
+                    <span>Answer</span>
+                  </div>
+                  <p
+                    class="answer-text"
+                    v-html="renderAnswerWithCitations(answer.answer)"
+                    @click="handleCitationClick"
+                  ></p>
+
+                  <div class="sources">
+                    <h4>引用来源</h4>
+                    <article
+                      v-for="source in answer.sources"
+                      :key="source.vector_id"
+                      :data-source-citation="source.citation"
+                    >
+                      <div class="source-head">
+                        <a-tag color="blue">[{{ source.citation }}]</a-tag>
+                        <span>{{ source.metadata.filename || source.metadata.source_label }}</span>
+                        <small v-if="source.score">score {{ source.score.toFixed(3) }}</small>
+                      </div>
+                      <p>{{ source.text }}</p>
+                    </article>
+                    <a-empty
+                      v-if="!answer.sources.length"
+                      description="没有可引用的来源"
+                    />
+                  </div>
+                </div>
+
+                <div v-else class="empty-answer">
+                  <CloudUploadOutlined />
+                  <p>完成文档索引后，可以先检索命中片段，再查看回答与引用来源。</p>
+                </div>
+              </a-tab-pane>
+
+              <a-tab-pane key="history" tab="最近问答">
+                <div class="history-block history-block-tab">
+                  <div class="history-head">
+                    <div>
+                      <h4>最近问答</h4>
+                      <p>保存当前知识库的问答记录</p>
+                    </div>
+                    <a-button size="small" @click="loadQuestionAnswers">
+                      <template #icon><ReloadOutlined /></template>
+                    </a-button>
+                  </div>
+
+                  <a-spin :spinning="loadingQuestionAnswers">
+                    <div class="history-list">
+                      <article
+                        v-for="item in questionAnswers"
+                        :key="item.id"
+                        class="history-row"
+                        @click="selectQuestionAnswer(item)"
+                      >
+                        <div class="history-main">
+                          <ClockCircleOutlined />
+                          <div>
+                            <h5>{{ item.question }}</h5>
+                            <p>{{ item.answer }}</p>
+                            <small>{{ formatDate(item.created_at) }} · top {{ item.top_k }}</small>
+                          </div>
+                        </div>
+                        <a-popconfirm title="删除这条问答历史？" @confirm.stop="deleteQuestionAnswer(item)">
+                          <a-button
+                            size="small"
+                            danger
+                            :loading="busyAnswerId === item.id"
+                            @click.stop
+                          >
+                            <template #icon><DeleteOutlined /></template>
+                          </a-button>
+                        </a-popconfirm>
+                      </article>
+
+                      <a-empty
+                        v-if="!questionAnswers.length"
+                        description="还没有问答历史"
+                      />
+
+                      <div v-if="qaTotal > qaPageSize" class="pagination-row">
+                        <a-pagination
+                          :current="qaPage"
+                          :page-size="qaPageSize"
+                          :total="qaTotal"
+                          :show-size-changer="false"
+                          size="small"
+                          @change="goQaPage"
+                        />
+                      </div>
+                    </div>
+                  </a-spin>
+                </div>
+              </a-tab-pane>
+            </a-tabs>
           </section>
         </div>
       </section>

@@ -76,6 +76,12 @@ ollama pull qwen2.5:7b
 在项目根目录创建 `.env`：
 
 ```bash
+# API 认证（留空则不启用认证）
+API_TOKEN=
+
+# 上传文件大小限制（默认 50 MB）
+MAX_UPLOAD_BYTES=52428800
+
 DATABASE_URL=sqlite:////home/zyp13/projects/Knowledge AI/backend/data/knowledge_agent.db
 STORAGE_DIR=/home/zyp13/projects/Knowledge AI/backend/data/uploads
 CHROMA_DIR=/home/zyp13/projects/Knowledge AI/backend/data/chroma
@@ -91,16 +97,19 @@ LLM_MODEL=qwen2.5:7b
 
 说明：
 
+- `API_TOKEN` 设置后，所有 `/api/` 请求需要携带 `Authorization: Bearer <token>` 头。留空则不启用认证。
+- `MAX_UPLOAD_BYTES` 限制单次请求体大小，防止上传超大文件。
 - `EMBEDDING_*` 用于文档索引和检索查询向量化。
 - `LLM_*` 用于最终问答生成；只做上传、解析、索引、检索时可以暂时不填。
 - `.env` 已加入 `.gitignore`，不要提交真实密钥。
 - 后端对本地 OpenAI-compatible 请求会禁用系统代理，避免访问 `127.0.0.1:11434` 时被代理转发导致 502。
+- 服务启动时会自动将卡在 `running` 状态的文档标记为 `failed`，防止重启导致任务丢失。
 
 ## 启动后端
 
 ```bash
 cd backend
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload

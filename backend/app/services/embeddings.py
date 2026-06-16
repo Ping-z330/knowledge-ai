@@ -30,6 +30,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
     api_key: str
     model: str
     timeout: float = 60.0
+    batch_size: int = 20
 
     @classmethod
     def from_settings(cls) -> "OpenAICompatibleEmbeddingProvider":
@@ -38,6 +39,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             base_url=settings.embedding_base_url,
             api_key=settings.embedding_api_key,
             model=settings.embedding_model,
+            batch_size=settings.embedding_batch_size,
         )
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -49,6 +51,15 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
                 "EMBEDDING_API_KEY, and EMBEDDING_MODEL."
             )
 
+        all_embeddings: list[list[float]] = []
+        batch_count = (len(texts) + self.batch_size - 1) // self.batch_size
+        for batch_index in range(batch_count):
+            start = batch_index * self.batch_size
+            batch = texts[start : start + self.batch_size]
+            all_embeddings.extend(self._embed_batch(batch))
+        return all_embeddings
+
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         endpoint = self.base_url.rstrip("/") + "/embeddings"
         payload = json.dumps({"model": self.model, "input": texts}).encode("utf-8")
         request = urllib.request.Request(

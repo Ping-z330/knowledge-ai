@@ -1,4 +1,15 @@
+from typing import Generic, TypeVar
+
 from pydantic import BaseModel, ConfigDict, Field
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    total: int
+    limit: int
+    offset: int
 
 
 class KnowledgeBaseCreate(BaseModel):

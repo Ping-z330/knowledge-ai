@@ -15,7 +15,9 @@ class DocumentRepository:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
 
-    def list_for_knowledge_base(self, knowledge_base_id: str) -> list[dict]:
+    def list_for_knowledge_base(
+        self, knowledge_base_id: str, *, limit: int = 50, offset: int = 0
+    ) -> list[dict]:
         rows = self.connection.execute(
             """
             SELECT
@@ -32,10 +34,18 @@ class DocumentRepository:
             FROM documents
             WHERE knowledge_base_id = ?
             ORDER BY created_at DESC
+            LIMIT ? OFFSET ?
             """,
-            (knowledge_base_id,),
+            (knowledge_base_id, limit, offset),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def count_for_knowledge_base(self, knowledge_base_id: str) -> int:
+        row = self.connection.execute(
+            "SELECT COUNT(*) AS cnt FROM documents WHERE knowledge_base_id = ?",
+            (knowledge_base_id,),
+        ).fetchone()
+        return row["cnt"] if row else 0
 
     def list_pending_parse(self, knowledge_base_id: str) -> list[dict]:
         rows = self.connection.execute(
