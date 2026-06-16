@@ -427,6 +427,24 @@ function handleCitationClick(event: Event) {
   }
 }
 
+function highlightSourceCitation(event: Event) {
+  const el = event.currentTarget as HTMLElement
+  const citation = el.dataset.sourceCitation
+  if (!citation) return
+  document.querySelectorAll(`.citation-link[data-citation="${citation}"]`).forEach((link) => {
+    link.classList.add('citation-highlight')
+  })
+}
+
+function clearSourceCitation(event: Event) {
+  const el = event.currentTarget as HTMLElement
+  const citation = el.dataset.sourceCitation
+  if (!citation) return
+  document.querySelectorAll(`.citation-link[data-citation="${citation}"]`).forEach((link) => {
+    link.classList.remove('citation-highlight')
+  })
+}
+
 type DocumentStatusTone = 'default' | 'processing' | 'success' | 'error'
 
 type DocumentStatusMeta = {
@@ -1274,6 +1292,8 @@ onUnmounted(() => {
                       v-for="source in answer.sources"
                       :key="source.vector_id"
                       :data-source-citation="source.citation"
+                      @mouseenter="highlightSourceCitation"
+                      @mouseleave="clearSourceCitation"
                     >
                       <div class="source-head">
                         <a-tag color="blue">[{{ source.citation }}]</a-tag>
@@ -1344,6 +1364,8 @@ onUnmounted(() => {
                               :key="source.vector_id"
                               class="conv-source-item"
                               :data-source-citation="source.citation"
+                              @mouseenter="highlightSourceCitation"
+                              @mouseleave="clearSourceCitation"
                             >
                               <a-tag color="blue">[{{ source.citation }}]</a-tag>
                               <span>{{ source.metadata.filename || source.metadata.source_label }}</span>
