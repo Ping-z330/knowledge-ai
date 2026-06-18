@@ -140,6 +140,31 @@ const convAsking = ref(false)
 const convMessagesRef = ref<HTMLElement | null>(null)
 const currentAnswerId = ref('')
 const ratingSubmitting = ref(false)
+const kbSearch = ref('')
+const selectedDocumentIds = ref<Set<string>>(new Set())
+const uploadZoneVisible = ref(true)
+
+const filteredKnowledgeBases = computed(() => {
+  const s = kbSearch.value.trim().toLowerCase()
+  if (!s) return knowledgeBases.value
+  return knowledgeBases.value.filter(
+    (kb) => kb.name.toLowerCase().includes(s) || kb.description.toLowerCase().includes(s),
+  )
+})
+
+const documentSelectAll = computed({
+  get: () =>
+    filteredDocuments.value.length > 0 &&
+    filteredDocuments.value.every((d) => selectedDocumentIds.value.has(d.id)),
+  set: (val: boolean) => {
+    if (val) {
+      filteredDocuments.value.forEach((d) => selectedDocumentIds.value.add(d.id))
+    } else {
+      filteredDocuments.value.forEach((d) => selectedDocumentIds.value.delete(d.id))
+    }
+    selectedDocumentIds.value = new Set(selectedDocumentIds.value)
+  },
+})
 
 const currentAnswerRating = computed(() => {
   const item = questionAnswers.value.find((a) => a.id === currentAnswerId.value)
@@ -464,6 +489,55 @@ const submitRating = async (answerId: string, rating: number, knowledgeBaseId: s
   }
 }
 
+function toggleSelectDoc(id: string) {
+  const next = new Set(selectedDocumentIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedDocumentIds.value = next
+}
+
+const batchParseSelected = async () => {
+  if (!selectedKnowledgeBaseId.value || !selectedDocumentIds.value.size) return
+  batchParsing.value = true
+  let count = 0
+  try {
+    for (const id of selectedDocumentIds.value) {
+      const doc = documents.value.find((d) => d.id === id)
+      if (!doc || doc.parse_status === 'running') continue
+      await api.post(`/knowledge-bases/${selectedKnowledgeBaseId.value}/documents/${id}/parse`)
+      count++
+    }
+    message.success(`已触发 ${count} 个解析任务`)
+    selectedDocumentIds.value = new Set()
+    await loadDocuments()
+  } catch {
+    message.error('部分解析请求失败')
+  } finally {
+    batchParsing.value = false
+  }
+}
+
+const batchIndexSelected = async () => {
+  if (!selectedKnowledgeBaseId.value || !selectedDocumentIds.value.size) return
+  batchIndexing.value = true
+  let count = 0
+  try {
+    for (const id of selectedDocumentIds.value) {
+      const doc = documents.value.find((d) => d.id === id)
+      if (!doc || doc.index_status === 'running' || doc.parse_status !== 'parsed') continue
+      await api.post(`/knowledge-bases/${selectedKnowledgeBaseId.value}/documents/${id}/index`)
+      count++
+    }
+    message.success(`已触发 ${count} 个索引任务`)
+    selectedDocumentIds.value = new Set()
+    await loadDocuments()
+  } catch {
+    message.error('部分索引请求失败')
+  } finally {
+    batchIndexing.value = false
+  }
+}
+
 function clearConversation() {
   conversation.value = []
   convStreaming.value = false
@@ -631,6 +705,21 @@ const loadQuestionAnswers = async () => {
   }
 }
 
+const deleteKnowledgeBase = async (item: KnowledgeBase) => {
+  try {
+    await api.delete(`/knowledge-bases/${item.id}`)
+    knowledgeBases.value = knowledgeBases.value.filter((kb) => kb.id !== item.id)
+    if (selectedKnowledgeBaseId.value === item.id) {
+      selectedKnowledgeBaseId.value = ''
+      documents.value = []
+      answer.value = null
+    }
+    message.success(`已删除知识库「${item.name}」`)
+  } catch {
+    message.error('删除失败')
+  }
+}
+
 const selectKnowledgeBase = async (id: string) => {
   selectedKnowledgeBaseId.value = id
   answer.value = null
@@ -680,7 +769,10 @@ const uploadProps = computed<UploadProps>(() => ({
   disabled: !selectedKnowledgeBaseId.value,
   async onChange(info) {
     if (info.file.status === 'done') {
+      message.success(`「${info.file.name}」上传成功`)
       await loadDocuments()
+    } else if (info.file.status === 'error') {
+      message.error(`「${info.file.name}」上传失败`)
     }
   },
 }))
@@ -1034,26 +1126,75 @@ onUnmounted(() => {
             </a-button>
           </div>
 
+          <a-input
+            v-if="knowledgeBases.length > 3"
+            v-model:value="kbSearch"
+            placeholder="搜索知识库…"
+            allow-clear
+            size="small"
+            class="kb-search"
+          />
+
           <a-spin :spinning="loadingKnowledgeBases">
-            <button
-              v-for="item in knowledgeBases"
+            <div
+              v-for="item in filteredKnowledgeBases"
               :key="item.id"
               class="kb-item"
               :class="{ active: item.id === selectedKnowledgeBaseId }"
               @click="selectKnowledgeBase(item.id)"
             >
-              <span>{{ item.name }}</span>
-              <small>{{ item.description || '无描述' }}</small>
-            </button>
+              <div class="kb-item-main">
+                <span>{{ item.name }}</span>
+                <small>{{ item.description || '无描述' }}</small>
+              </div>
+              <a-popconfirm
+                title="删除这个知识库？里面的所有文档和索引数据都会被清除。"
+                ok-text="确认删除"
+                cancel-text="取消"
+                ok-type="danger"
+                @confirm.stop="deleteKnowledgeBase(item)"
+                @cancel.stop
+              >
+                <a-button
+                  size="small"
+                  type="text"
+                  danger
+                  class="kb-delete-btn"
+                  @click.stop
+                >
+                  <template #icon><DeleteOutlined /></template>
+                </a-button>
+              </a-popconfirm>
+            </div>
             <a-empty
               v-if="!knowledgeBases.length"
               description="还没有知识库"
+            />
+            <a-empty
+              v-else-if="!filteredKnowledgeBases.length"
+              description="没有匹配的知识库"
             />
           </a-spin>
         </section>
       </aside>
 
       <section class="workspace">
+        <!-- 首次使用引导 -->
+        <div v-if="!knowledgeBases.length && !loadingKnowledgeBases" class="welcome-card">
+          <div class="welcome-icon">
+            <DatabaseOutlined />
+          </div>
+          <h2>欢迎使用 Knowledge Agent</h2>
+          <p>企业 RAG 知识库问答系统 — 上传文档，让 AI 基于你的资料回答问题。</p>
+          <div class="welcome-steps">
+            <div><strong>1.</strong> 在左侧创建一个知识库</div>
+            <div><strong>2.</strong> 上传 PDF / Word / Markdown 文档</div>
+            <div><strong>3.</strong> 点击解析 → 索引</div>
+            <div><strong>4.</strong> 开始提问或对话</div>
+          </div>
+        </div>
+
+        <template v-if="selectedKnowledgeBaseId">
         <header class="workspace-head">
           <div>
             <p class="eyebrow">RAG Pipeline</p>
@@ -1117,7 +1258,12 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <a-upload-dragger v-bind="uploadProps" class="upload-zone">
+            <div class="upload-toggle-row">
+              <a-button size="small" type="text" @click="uploadZoneVisible = !uploadZoneVisible">
+                {{ uploadZoneVisible ? '收起上传区' : '展开上传区' }}
+              </a-button>
+            </div>
+            <a-upload-dragger v-if="uploadZoneVisible" v-bind="uploadProps" class="upload-zone">
               <p class="ant-upload-drag-icon"><InboxOutlined /></p>
               <p class="ant-upload-text">拖拽或点击上传一个或多个文档</p>
               <p class="ant-upload-hint">上传后可批量解析和索引</p>
@@ -1141,8 +1287,32 @@ onUnmounted(() => {
             </div>
 
             <a-spin :spinning="loadingDocuments">
+              <div v-if="selectedDocumentIds.size > 0" class="batch-bar">
+                <span>已选 {{ selectedDocumentIds.size }} 个文档</span>
+                <a-button size="small" :loading="batchParsing" @click="batchParseSelected">
+                  批量解析
+                </a-button>
+                <a-button size="small" type="primary" ghost :loading="batchIndexing" @click="batchIndexSelected">
+                  批量索引
+                </a-button>
+                <a-button size="small" @click="selectedDocumentIds = new Set()">取消选择</a-button>
+              </div>
+
+              <div v-if="documents.length > 0 && !selectedDocumentIds.size" class="document-list-header">
+                <a-checkbox
+                  :checked="documentSelectAll"
+                  :indeterminate="selectedDocumentIds.size > 0 && !documentSelectAll"
+                  @change="documentSelectAll = ($event.target as HTMLInputElement).checked"
+                />
+                <span class="document-list-header-text">全选</span>
+              </div>
+
               <div class="document-list">
                 <article v-for="item in filteredDocuments" :key="item.id" class="document-row">
+                  <a-checkbox
+                    :checked="selectedDocumentIds.has(item.id)"
+                    @change="toggleSelectDoc(item.id)"
+                  />
                   <div class="document-main">
                     <FileSearchOutlined class="file-icon" />
                     <div>
@@ -1220,8 +1390,8 @@ onUnmounted(() => {
           <section class="panel qa-panel">
             <div class="panel-head">
               <div>
-                <h3>问答调试面板</h3>
-                <p>先检索，再问答，定位命中情况</p>
+                <h3>问答面板</h3>
+                <p>提问后查看回答、引用来源与检索命中详情</p>
               </div>
               <a-tag color="success" v-if="indexedCount > 0">
                 <CheckCircleOutlined />
@@ -1230,7 +1400,7 @@ onUnmounted(() => {
             </div>
 
             <a-tabs v-model:activeKey="qaActiveTab" class="qa-tabs">
-              <a-tab-pane key="debug" tab="调试面板">
+              <a-tab-pane key="debug" tab="问答">
                 <div class="ask-box">
                   <a-textarea
                     v-model:value="question"
@@ -1595,6 +1765,7 @@ onUnmounted(() => {
             </a-tabs>
           </section>
         </div>
+      </template>
       </section>
     </main>
   </a-config-provider>
