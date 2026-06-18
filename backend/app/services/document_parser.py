@@ -105,12 +105,58 @@ def _parse_docx(path: Path, filename: str) -> ExtractedDocument:
 
     return _document_from_text("\n\n".join(paragraphs), filename, source_label=filename)
 
-# _parse_pdf函数使用pypdf库打开PDF文件，提取每一页的文本内容，并将每一页作为一个独立的ExtractedSection对象存储在ExtractedDocument中，如果文件格式无效或者无法提取任何文本，则抛出DocumentParseError异常
+# _parse_pdf函数优先使用 pdfplumber 提取文本和表格，如果未安装则回退到 pypdf
 def _parse_pdf(path: Path, filename: str) -> ExtractedDocument:
+    try:
+        import pdfplumber
+    except ImportError:
+        return _parse_pdf_pypdf(path, filename)
+
+    sections: list[ExtractedSection] = []
+    try:
+        with pdfplumber.open(str(path)) as pdf:
+            for index, page in enumerate(pdf.pages, start=1):
+                parts: list[str] = []
+
+                tables = page.extract_tables()
+                for table_idx, table in enumerate(tables, start=1):
+                    if not table:
+                        continue
+                    rows = [
+                        " | ".join(
+                            str(cell).strip() if cell is not None else ""
+                            for cell in row
+                        )
+                        for row in table
+                    ]
+                    parts.append(f"[Table {table_idx}]\n" + "\n".join(rows))
+
+                text = (page.extract_text() or "").strip()
+                if text:
+                    parts.append(text)
+
+                if parts:
+                    sections.append(
+                        ExtractedSection(
+                            text="\n\n".join(parts),
+                            source_label=f"{filename} page {index}",
+                            page_number=index,
+                        )
+                    )
+    except Exception as exc:
+        raise DocumentParseError(f"Failed to parse PDF: {exc}") from exc
+
+    if not sections:
+        raise DocumentParseError("No text could be extracted from the PDF")
+    return ExtractedDocument(sections=sections)
+
+
+def _parse_pdf_pypdf(path: Path, filename: str) -> ExtractedDocument:
+    """pypdf 回退解析器（无表格提取）。"""
     try:
         from pypdf import PdfReader
     except ImportError as exc:
-        raise DocumentParseError("PDF parsing requires the pypdf package") from exc
+        raise DocumentParseError("PDF parsing requires pypdf or pdfplumber") from exc
 
     try:
         reader = PdfReader(str(path))
