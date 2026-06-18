@@ -4,6 +4,42 @@
 
 已打通完整链路：知识库管理、文档解析切块、向量索引、语义检索、流式问答、多轮对话、引用追溯、质量反馈。
 
+## 系统架构
+
+```mermaid
+flowchart LR
+    subgraph 用户
+        B[浏览器]
+    end
+
+    subgraph 前端[Nginx + Vue 3]
+        F[静态资源]
+        P[API 代理]
+    end
+
+    subgraph 后端[FastAPI]
+        R[routers]
+        S[services]
+        DB[(SQLite)]
+    end
+
+    subgraph 向量
+        CH[(ChromaDB)]
+    end
+
+    subgraph 模型
+        OL[Ollama]
+    end
+
+    B --> F
+    B --> P
+    P --> R
+    R --> S
+    S --> DB
+    S --> CH
+    S --> OL
+```
+
 ## 技术栈
 
 - Frontend: Vue 3 + TypeScript + Vite + Ant Design Vue
@@ -193,6 +229,35 @@ POST   /api/knowledge-bases/{knowledge_base_id}/questions/stream          (SSE)
 GET    /api/knowledge-bases/{knowledge_base_id}/question-answers          ?limit=&offset=
 PATCH  /api/knowledge-bases/{knowledge_base_id}/question-answers/{id}/rating
 DELETE /api/knowledge-bases/{knowledge_base_id}/question-answers/{id}
+```
+
+## Docker 部署
+
+```bash
+# 启动全部服务（Ollama + 后端 + 前端）
+docker compose up -d
+
+# 首次启动会自动拉取 embedding 模型 nomic-embed-text
+# 查看启动日志
+docker compose logs -f
+
+# 打开浏览器
+# http://localhost:8080
+```
+
+如需使用外部 LLM（如 DeepSeek），在 `.env` 或命令行指定：
+
+```bash
+LLM_BASE_URL=https://api.deepseek.com/v1 \
+LLM_API_KEY=sk-xxx \
+LLM_MODEL=deepseek-chat \
+docker compose up -d
+```
+
+用 Ollama 运行本地 chat 模型：
+
+```bash
+docker compose exec ollama ollama pull qwen2.5:7b
 ```
 
 ## 测试

@@ -3,11 +3,12 @@ from pathlib import Path
 import json
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 
 from ..auth import require_api_token
 from ..database import connection_scope
+from ..task_queue import TASK_INDEX, TASK_PARSE, task_queue
 from ..repositories.chunks import ChunkRepository
 from ..repositories.documents import DocumentRepository
 from ..repositories.knowledge_bases import KnowledgeBaseRepository
@@ -55,33 +56,42 @@ def _source_to_dict(source: object) -> dict:
         "metadata": source.metadata,
     }
 
-
+# 运行文档解析任务，从数据库中获取文档信息，删除旧的向量数据，解析文档内容并分块，
+# 然后将新的分块数据保存到数据库中，并更新文档的解析状态和索引状态
 def _run_parse_document_task(knowledge_base_id: str, document_id: str) -> None:
     with connection_scope() as connection:
+        # 验证文档是否存在且属于指定的知识库
         document_repository = DocumentRepository(connection)
+        # 获取文档信息，如果文档不存在或者不属于指定的知识库，则直接返回
         document = document_repository.get(document_id)
         if document is None or document["knowledge_base_id"] != knowledge_base_id:
             return
 
         try:
+            # 删除文档相关的旧向量数据，以便后续重新索引时不会有冲突
             delete_document_vectors(
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
             )
+            # 验证上传的文件是否存在于存储路径中，如果文件丢失则抛出解析错误
             path = Path(document["storage_path"])
             if not path.exists():
                 raise DocumentParseError("Uploaded file is missing from storage")
 
+            # 解析文档内容并分块，如果解析失败或者无法生成任何分块，则抛出解析错误
             extracted = parse_document(path, document["filename"])
             chunks = chunk_document(extracted)
             if not chunks:
                 raise DocumentParseError("No chunks could be created from document text")
 
+            # 将新的分块数据保存到数据库中，并更新文档的解析状态为parsed，索引状态为pending，错误信息清空
             ChunkRepository(connection).replace_for_document(
                 knowledge_base_id=knowledge_base_id,
                 document_id=document_id,
                 chunks=chunks,
             )
+
+            # 更新文档的解析状态为parsed，索引状态为pending，错误信息清空，以便前端可以知道文档已经解析完成并且准备好进行索引了
             document_repository.update_parse_and_index_status(
                 document_id,
                 parse_status="parsed",
@@ -95,7 +105,8 @@ def _run_parse_document_task(knowledge_base_id: str, document_id: str) -> None:
                 error_message=str(exc),
             )
 
-
+# 运行文档索引任务，从数据库中获取文档信息和分块数据，删除旧的向量数据，索引新的分块数据，
+# 然后更新文档的索引状态为indexed，如果索引过程中发生错误则更新索引状态为failed并保存错误信息
 def _run_index_document_task(knowledge_base_id: str, document_id: str) -> None:
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
@@ -265,7 +276,6 @@ def delete_document(knowledge_base_id: str, document_id: str) -> Response:
 def parse_uploaded_document(
     knowledge_base_id: str,
     document_id: str,
-    background_tasks: BackgroundTasks,
 ) -> dict:
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
@@ -279,7 +289,11 @@ def parse_uploaded_document(
             index_status="pending",
             error_message=None,
         )
-    background_tasks.add_task(_run_parse_document_task, knowledge_base_id, document_id)
+    task_queue.enqueue(
+        TASK_PARSE,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+    )
     return updated
 
 
@@ -289,7 +303,6 @@ def parse_uploaded_document(
 )
 def parse_pending_documents(
     knowledge_base_id: str,
-    background_tasks: BackgroundTasks,
 ) -> dict:
     with connection_scope() as connection:
         knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
@@ -305,11 +318,13 @@ def parse_pending_documents(
                 index_status="pending",
                 error_message=None,
             )
-            background_tasks.add_task(
-                _run_parse_document_task,
-                knowledge_base_id,
-                document["id"],
-            )
+
+    for document in documents:
+        task_queue.enqueue(
+            TASK_PARSE,
+            knowledge_base_id=knowledge_base_id,
+            document_id=document["id"],
+        )
 
     return {
         "scheduled": len(documents),
@@ -336,7 +351,6 @@ def list_document_chunks(knowledge_base_id: str, document_id: str) -> list[dict]
 def index_uploaded_document(
     knowledge_base_id: str,
     document_id: str,
-    background_tasks: BackgroundTasks,
 ) -> dict:
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
@@ -350,7 +364,11 @@ def index_uploaded_document(
             index_status="running",
             error_message=None,
         )
-    background_tasks.add_task(_run_index_document_task, knowledge_base_id, document_id)
+    task_queue.enqueue(
+        TASK_INDEX,
+        knowledge_base_id=knowledge_base_id,
+        document_id=document_id,
+    )
     return document
 
 
@@ -360,7 +378,6 @@ def index_uploaded_document(
 )
 def index_pending_documents(
     knowledge_base_id: str,
-    background_tasks: BackgroundTasks,
 ) -> dict:
     with connection_scope() as connection:
         knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
@@ -375,11 +392,13 @@ def index_pending_documents(
                 index_status="running",
                 error_message=None,
             )
-            background_tasks.add_task(
-                _run_index_document_task,
-                knowledge_base_id,
-                document["id"],
-            )
+
+    for document in documents:
+        task_queue.enqueue(
+            TASK_INDEX,
+            knowledge_base_id=knowledge_base_id,
+            document_id=document["id"],
+        )
 
     return {
         "scheduled": len(documents),
@@ -393,7 +412,6 @@ def index_pending_documents(
 )
 def reindex_all_documents(
     knowledge_base_id: str,
-    background_tasks: BackgroundTasks,
 ) -> dict:
     with connection_scope() as connection:
         knowledge_base = KnowledgeBaseRepository(connection).get(knowledge_base_id)
@@ -408,11 +426,13 @@ def reindex_all_documents(
                 index_status="running",
                 error_message=None,
             )
-            background_tasks.add_task(
-                _run_index_document_task,
-                knowledge_base_id,
-                document["id"],
-            )
+
+    for document in documents:
+        task_queue.enqueue(
+            TASK_INDEX,
+            knowledge_base_id=knowledge_base_id,
+            document_id=document["id"],
+        )
 
     return {
         "scheduled": len(documents),

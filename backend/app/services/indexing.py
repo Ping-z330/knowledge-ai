@@ -12,7 +12,8 @@ class IndexingError(Exception):
 class IndexingResult:
     vector_ids_by_chunk_id: dict[str, str]
 
-
+# 索引文档的分块数据，首先验证文档的解析状态和分块数据的有效性，然后使用嵌入提供者生成分块文本的向量表示，
+# 最后将向量数据保存到向量存储中，并返回分块ID与向量ID的映射关系，如果过程中发生任何错误则抛出 IndexingError 异常
 def index_document_chunks(
     *,
     knowledge_base_id: str,
@@ -29,8 +30,10 @@ def index_document_chunks(
     provider = embedding_provider or OpenAICompatibleEmbeddingProvider.from_settings()
     store = vector_store or ChromaVectorStore()
 
+    # 提取所有分块文本并生成向量表示，如果嵌入提供者返回的向量数量与分块数量不匹配则抛出索引错误
     texts = [chunk["text"] for chunk in chunks]
     try:
+        # 调用嵌入提供者生成分块文本的向量表示，如果嵌入过程中发生错误则捕获异常并抛出索引错误
         embeddings = provider.embed(texts)
     except EmbeddingError as exc:
         raise IndexingError(str(exc)) from exc
@@ -68,7 +71,8 @@ def index_document_chunks(
 
     return IndexingResult(vector_ids_by_chunk_id=vector_ids_by_chunk_id)
 
-
+# 删除文档的向量数据，通常在文档被删除或者重新解析时调用，
+# 以确保向量存储中的数据与数据库中的文档状态保持一致
 def delete_document_vectors(
     *,
     knowledge_base_id: str,

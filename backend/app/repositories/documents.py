@@ -11,6 +11,8 @@ def _to_dict(row: Row | None) -> dict | None:
     return dict(row) if row is not None else None
 
 
+# _recover_stuck_documents函数用于恢复那些在解析或索引过程中卡在“running”状态的文档，将它们的状态更新为“failed”，
+# 以便前端可以正确显示这些文档的状态，并且不会一直显示为正在处理
 class DocumentRepository:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
@@ -216,6 +218,7 @@ class DocumentRepository:
         )
         return self.get(document_id)
 
+    # 更新文档的解析状态和索引状态，通常在解析和索引任务完成后调用，以便前端可以获取最新的状态信息
     def update_parse_and_index_status(
         self,
         document_id: str,

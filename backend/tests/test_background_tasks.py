@@ -32,8 +32,6 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         get_settings.cache_clear()
 
     def test_parse_route_returns_running_and_background_task_marks_parsed(self) -> None:
-        from fastapi import BackgroundTasks
-
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
@@ -65,11 +63,9 @@ class BackgroundTaskRouteTest(unittest.TestCase):
             TextChunk(0, "hello", "manual.txt", None, None)
         ]
         try:
-            background_tasks = BackgroundTasks()
             running = router_module.parse_uploaded_document(
                 knowledge_base["id"],
                 document["id"],
-                background_tasks,
             )
             self.assertEqual(running["parse_status"], "running")
             self.assertEqual(running["index_status"], "pending")
@@ -86,8 +82,6 @@ class BackgroundTaskRouteTest(unittest.TestCase):
             router_module.chunk_document = original_chunk
 
     def test_index_route_returns_running_and_background_task_marks_indexed(self) -> None:
-        from fastapi import BackgroundTasks
-
         from app.database import connection_scope
         from app.repositories.chunks import ChunkRepository
         from app.repositories.documents import DocumentRepository
@@ -122,11 +116,9 @@ class BackgroundTaskRouteTest(unittest.TestCase):
             vector_ids_by_chunk_id={chunks[0]["id"]: "chunk:" + chunks[0]["id"]}
         )
         try:
-            background_tasks = BackgroundTasks()
             running = router_module.index_uploaded_document(
                 knowledge_base["id"],
                 document["id"],
-                background_tasks,
             )
             self.assertEqual(running["index_status"], "running")
 
@@ -140,8 +132,6 @@ class BackgroundTaskRouteTest(unittest.TestCase):
             router_module.index_document_chunks = original_index
 
     def test_batch_routes_schedule_pending_documents(self) -> None:
-        from fastapi import BackgroundTasks
-
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
@@ -173,11 +163,9 @@ class BackgroundTaskRouteTest(unittest.TestCase):
 
         parse_response = router_module.parse_pending_documents(
             knowledge_base["id"],
-            BackgroundTasks(),
         )
         index_response = router_module.index_pending_documents(
             knowledge_base["id"],
-            BackgroundTasks(),
         )
 
         self.assertEqual(parse_response["scheduled"], 1)
@@ -194,8 +182,6 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         self.assertEqual(index_document["index_status"], "running")
 
     def test_reindex_all_route_schedules_all_parsed_documents(self) -> None:
-        from fastapi import BackgroundTasks
-
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
@@ -238,7 +224,6 @@ class BackgroundTaskRouteTest(unittest.TestCase):
 
         response = router_module.reindex_all_documents(
             knowledge_base["id"],
-            BackgroundTasks(),
         )
 
         self.assertEqual(response["scheduled"], 2)

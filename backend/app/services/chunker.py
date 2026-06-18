@@ -15,7 +15,8 @@ class TextChunk:
 
 _PARAGRAPH_SPLIT = re.compile(r"\n\s*\n")
 
-
+# 将解析后的文档内容进行分块，首先按空行切分成段落，然后累积段落形成 chunk，
+# 如果单个段落超过 chunk_size 则用滑窗切割，最后返回所有的 chunk 列表
 def chunk_document(
     document: ExtractedDocument,
     *,
@@ -31,7 +32,9 @@ def chunk_document(
 
     chunks: list[TextChunk] = []
     for section in document.sections:
+        # 按空行切分成段落，并规范化空白，如果段落过长则用滑窗切割成多个 chunk，最后将 chunk 信息封装成 TextChunk 对象并添加到结果列表中
         paragraphs = _extract_paragraphs(section.text)
+        # 将段落累积成 chunk，超长段落用滑窗拆分，chunk 之间用两个换行符连接，以保留段落边界信息
         section_chunks = _build_chunks_from_paragraphs(
             paragraphs,
             chunk_size=chunk_size,

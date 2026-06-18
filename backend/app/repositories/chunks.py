@@ -8,7 +8,7 @@ from ..services.chunker import TextChunk
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
-
+# _recover_stuck_documents函数用于恢复卡在运行状态的文档，将解析状态为running的文档更新为failed，并记录恢复的文档数量
 class ChunkRepository:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
@@ -35,6 +35,8 @@ class ChunkRepository:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    # 替换文档的分块数据：首先删除指定文档的所有旧分块数据，然后将新的分块数据插入到数据库中，
+    # 并返回新分块数据的列表
     def replace_for_document(
         self,
         *,

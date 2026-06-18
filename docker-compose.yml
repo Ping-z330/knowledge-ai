@@ -1,0 +1,58 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ka-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ka-ollama-init
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 5
+        ollama pull nomic-embed-text
+        echo "embedding model ready"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ollama_data:/root/.ollama
+
+  backend:
+    build: ./backend
+    container_name: ka-backend
+    depends_on:
+      - ollama
+    environment:
+      - DATABASE_URL=sqlite:////app/data/knowledge_agent.db
+      - STORAGE_DIR=/app/data/uploads
+      - CHROMA_DIR=/app/data/chroma
+      - EMBEDDING_BASE_URL=http://ollama:11434/v1
+      - EMBEDDING_API_KEY=ollama
+      - EMBEDDING_MODEL=nomic-embed-text
+      - EMBEDDING_BATCH_SIZE=20
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://ollama:11434/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-qwen2.5:7b}
+      - API_TOKEN=${API_TOKEN:-}
+      - MAX_UPLOAD_BYTES=52428800
+    volumes:
+      - backend_data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: ka-frontend
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  backend_data:

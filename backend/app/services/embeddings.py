@@ -32,6 +32,8 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
     timeout: float = 60.0
     batch_size: int = 20
 
+    # 从应用设置中创建一个 OpenAICompatibleEmbeddingProvider 实例，读取 EMBEDDING_BASE_URL、EMBEDDING_API_KEY、EMBEDDING_MODEL 和 EMBEDDING_BATCH_SIZE 配置项，
+    # 并将它们传递给构造函数，如果配置项缺失则使用默认值
     @classmethod
     def from_settings(cls) -> "OpenAICompatibleEmbeddingProvider":
         settings = get_settings()
@@ -42,6 +44,8 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             batch_size=settings.embedding_batch_size,
         )
 
+    # 生成文本的向量表示，如果提供者未正确配置则抛出嵌入错误，使用批处理方式调用嵌入接口以提高效率，
+    # 并对接口调用过程中可能发生的各种错误进行捕获和处理，确保返回的向量数据与输入文本数量匹配且格式正确，否则抛出嵌入错误
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -59,6 +63,7 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             all_embeddings.extend(self._embed_batch(batch))
         return all_embeddings
 
+    # 调用嵌入提供者生成分块文本的向量表示，如果嵌入过程中发生错误则捕获异常并抛出索引错误
     def _embed_batch(self, texts: list[str]) -> list[list[float]]:
         endpoint = self.base_url.rstrip("/") + "/embeddings"
         payload = json.dumps({"model": self.model, "input": texts}).encode("utf-8")

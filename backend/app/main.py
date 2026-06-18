@@ -9,12 +9,13 @@ from .config import get_settings
 from .database import connection_scope, init_db
 from .logging_config import setup_logging
 from .routers.knowledge_bases import router as knowledge_bases_router
+from .task_queue import TASK_INDEX, TASK_PARSE, task_queue
 
 _logger = logging.getLogger(__name__)
 
 
 def _recover_stuck_documents() -> None:
-    """将服务重启后卡在 running 状态的文档标记为 failed。"""
+    """将服务重启后卡在 running 状态的文档和 pending/running 任务标记为 failed。"""
     with connection_scope() as connection:
         cursor = connection.execute(
             "UPDATE documents SET parse_status = 'failed', "
@@ -30,11 +31,19 @@ def _recover_stuck_documents() -> None:
             "WHERE index_status = 'running'"
         )
         index_failed = cursor.rowcount
-    if parse_failed or index_failed:
+        cursor = connection.execute(
+            "UPDATE tasks SET status = 'failed', "
+            "error_message = 'Server restarted while task was running', "
+            "updated_at = datetime('now') "
+            "WHERE status IN ('pending', 'running')"
+        )
+        task_failed = cursor.rowcount
+    if parse_failed or index_failed or task_failed:
         _logger.warning(
-            "Recovered stuck documents: %d parse, %d index marked as failed",
+            "Recovered stuck documents: %d parse, %d index, %d tasks marked as failed",
             parse_failed,
             index_failed,
+            task_failed,
         )
 
 
@@ -44,7 +53,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _logger.info("Starting Knowledge Agent backend")
     init_db()
     _recover_stuck_documents()
+
+    # 注册任务队列处理器并启动 worker
+    from .routers.knowledge_bases import (
+        _run_index_document_task,
+        _run_parse_document_task,
+    )
+
+    task_queue.register_handler(TASK_PARSE, _run_parse_document_task)
+    task_queue.register_handler(TASK_INDEX, _run_index_document_task)
+    task_queue.start()
+
     yield
+
+    task_queue.stop()
     _logger.info("Shutting down Knowledge Agent backend")
 
 

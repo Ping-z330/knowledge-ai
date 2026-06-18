@@ -23,6 +23,7 @@ def connect() -> Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(path)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
@@ -125,6 +126,21 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_question_answers_created_at
             ON question_answers(created_at);
+
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                task_type TEXT NOT NULL,
+                knowledge_base_id TEXT NOT NULL,
+                document_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_tasks_status
+            ON tasks(status);
             """
         )
 
