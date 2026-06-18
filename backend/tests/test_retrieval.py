@@ -66,7 +66,7 @@ class RetrievalServiceTest(unittest.TestCase):
         self.assertEqual(provider.texts, ["怎么问答？"])
         self.assertEqual(store.collection_name, "kb_kb_1")
         self.assertEqual(store.query_embedding, [0.1, 0.2])
-        self.assertEqual(store.top_k, 3)
+        self.assertEqual(store.top_k, 10)  # max(top_k*2, 10)
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].vector_id, "chunk:c1")
         self.assertAlmostEqual(results[0].score, 0.8)

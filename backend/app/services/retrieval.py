@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from ..config import get_settings
 from .embeddings import EmbeddingError, EmbeddingProvider, OpenAICompatibleEmbeddingProvider
 from .indexing import _collection_name
 from .vector_store import ChromaVectorStore, VectorSearchResult, VectorStore, VectorStoreError
@@ -31,9 +32,12 @@ def retrieve_chunks(
     if top_k <= 0 or top_k > 20:
         raise RetrievalError("top_k must be between 1 and 20")
 
+    settings = get_settings()
+
     provider = embedding_provider or OpenAICompatibleEmbeddingProvider.from_settings()
     store = vector_store or ChromaVectorStore()
 
+    # 向量检索
     try:
         embeddings = provider.embed([clean_query])
     except EmbeddingError as exc:
@@ -43,15 +47,32 @@ def retrieve_chunks(
         raise RetrievalError("Embedding provider returned an invalid query vector")
 
     try:
-        results = store.query(
+        vector_results = store.query(
             _collection_name(knowledge_base_id),
             embeddings[0],
-            top_k=top_k,
+            top_k=max(top_k * 2, 10),
         )
     except VectorStoreError as exc:
         raise RetrievalError(str(exc)) from exc
 
-    return [_to_retrieved_chunk(result) for result in results]
+    vector_chunks = [_to_retrieved_chunk(r) for r in vector_results]
+
+    # 关键词检索 (BM25)
+    from .keyword_search import keyword_engine
+
+    kw_results = keyword_engine.search(
+        _collection_name(knowledge_base_id),
+        clean_query,
+        top_k=max(top_k * 2, 10),
+    )
+
+    # RRF 融合
+    if kw_results:
+        merged = _rrf_fusion(vector_chunks, kw_results, top_k)
+    else:
+        merged = vector_chunks[:top_k]
+
+    return merged
 
 
 def _to_retrieved_chunk(result: VectorSearchResult) -> RetrievedChunk:
@@ -62,3 +83,40 @@ def _to_retrieved_chunk(result: VectorSearchResult) -> RetrievedChunk:
         score=score,
         metadata=result.metadata,
     )
+
+
+def _rrf_fusion(
+    vector_chunks: list[RetrievedChunk],
+    kw_results: list,
+    top_k: int,
+    k: int = 60,
+) -> list[RetrievedChunk]:
+    """Reciprocal Rank Fusion：合并向量和关键词排名。"""
+    from .keyword_search import KeywordSearchResult
+
+    scored: dict[str, tuple[RetrievedChunk, float]] = {}
+
+    for rank, chunk in enumerate(vector_chunks):
+        rrf = 1.0 / (k + rank + 1)
+        key = chunk.vector_id
+        scored[key] = (chunk, rrf)
+
+    for rank, kw in enumerate(kw_results):
+        rrf = 1.0 / (k + rank + 1)
+        # 用 chunk_id 从 metadata 匹配
+        chunk_id = kw.metadata.get("chunk_id", "")
+        key = f"chunk:{chunk_id}"
+        if key in scored:
+            _, existing = scored[key]
+            scored[key] = (scored[key][0], existing + rrf)
+        else:
+            fake_chunk = RetrievedChunk(
+                vector_id=key,
+                text=kw.text,
+                score=kw.score,
+                metadata=kw.metadata,
+            )
+            scored[key] = (fake_chunk, rrf)
+
+    merged = sorted(scored.values(), key=lambda x: x[1], reverse=True)
+    return [chunk for chunk, _ in merged[:top_k]]

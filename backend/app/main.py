@@ -14,6 +14,48 @@ from .task_queue import TASK_INDEX, TASK_PARSE, task_queue
 _logger = logging.getLogger(__name__)
 
 
+def _rebuild_all_keyword_indexes() -> None:
+    """重建所有知识库的 BM25 关键词索引。"""
+    try:
+        from .database import connect
+        from .services.indexing import rebuild_keyword_index
+
+        connection = connect()
+        try:
+            kb_rows = connection.execute(
+                "SELECT id FROM knowledge_bases"
+            ).fetchall()
+            chunk_rows = connection.execute(
+                "SELECT knowledge_base_id FROM chunks GROUP BY knowledge_base_id"
+            ).fetchall()
+            kb_ids = {row["id"] for row in kb_rows}
+            indexed_ids = {row["knowledge_base_id"] for row in chunk_rows}
+
+            for kb_id in indexed_ids & kb_ids:
+                db_conn = connect()
+                try:
+                    chunk_dicts = db_conn.execute(
+                        """
+                        SELECT id, knowledge_base_id, document_id, chunk_index,
+                               text, source_label, page_number, section_title
+                        FROM chunks WHERE knowledge_base_id = ?
+                        ORDER BY chunk_index ASC
+                        """,
+                        (kb_id,),
+                    ).fetchall()
+                    if chunk_dicts:
+                        rebuild_keyword_index(
+                            knowledge_base_id=kb_id,
+                            chunks=[dict(r) for r in chunk_dicts],
+                        )
+                finally:
+                    db_conn.close()
+        finally:
+            connection.close()
+    except Exception:
+        _logger.warning("Failed to rebuild keyword indexes on startup", exc_info=True)
+
+
 def _recover_stuck_documents() -> None:
     """将服务重启后卡在 running 状态的文档和 pending/running 任务标记为 failed。"""
     with connection_scope() as connection:
@@ -53,6 +95,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _logger.info("Starting Knowledge Agent backend")
     init_db()
     _recover_stuck_documents()
+    _rebuild_all_keyword_indexes()
 
     # 注册任务队列处理器并启动 worker
     from .routers.knowledge_bases import (

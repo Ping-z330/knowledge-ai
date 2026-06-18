@@ -13,6 +13,20 @@ class ChunkRepository:
     def __init__(self, connection: Connection) -> None:
         self.connection = connection
 
+    def list_for_knowledge_base(self, knowledge_base_id: str) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT
+                id, knowledge_base_id, document_id, chunk_index,
+                text, source_label, page_number, section_title, vector_id, created_at
+            FROM chunks
+            WHERE knowledge_base_id = ?
+            ORDER BY chunk_index ASC
+            """,
+            (knowledge_base_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_for_document(self, document_id: str) -> list[dict]:
         rows = self.connection.execute(
             """

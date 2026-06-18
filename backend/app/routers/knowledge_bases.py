@@ -36,7 +36,12 @@ from ..services.document_storage import (
     save_upload_file,
     validate_upload_filename,
 )
-from ..services.indexing import IndexingError, delete_document_vectors, index_document_chunks
+from ..services.indexing import (
+    IndexingError,
+    delete_document_vectors,
+    index_document_chunks,
+    rebuild_keyword_index,
+)
 from ..services.retrieval import RetrievalError, retrieve_chunks
 
 # 创建API路由器，所有路由都以/api/knowledge-bases为前缀，并且属于knowledge-bases标签
@@ -132,6 +137,16 @@ def _run_index_document_task(knowledge_base_id: str, document_id: str) -> None:
                 index_status="indexed",
                 error_message=None,
             )
+            # 重建关键词索引
+            try:
+                rebuild_keyword_index(
+                    knowledge_base_id=knowledge_base_id,
+                    chunks=chunk_repository.list_for_knowledge_base(knowledge_base_id),
+                )
+            except Exception:
+                logging.getLogger(__name__).warning(
+                    "Failed to rebuild keyword index for kb %s", knowledge_base_id
+                )
         except IndexingError as exc:
             document_repository.update_index_status(
                 document_id,
@@ -257,6 +272,12 @@ def delete_document(knowledge_base_id: str, document_id: str) -> Response:
             )
         except IndexingError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        # 清除 BM25 缓存
+        from ..services.indexing import _collection_name
+        from ..services.keyword_search import keyword_engine
+
+        keyword_engine.invalidate(_collection_name(knowledge_base_id))
 
         deleted = document_repository.delete(knowledge_base_id, document_id)
         if deleted is None:

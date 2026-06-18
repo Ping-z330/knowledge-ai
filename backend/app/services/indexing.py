@@ -73,6 +73,34 @@ def index_document_chunks(
 
 # 删除文档的向量数据，通常在文档被删除或者重新解析时调用，
 # 以确保向量存储中的数据与数据库中的文档状态保持一致
+def rebuild_keyword_index(
+    *,
+    knowledge_base_id: str,
+    chunks: list[dict],
+) -> None:
+    """从知识库的所有 chunks 重建 BM25 关键词索引。"""
+    from .keyword_search import keyword_engine
+
+    if not chunks:
+        keyword_engine.invalidate(_collection_name(knowledge_base_id))
+        return
+
+    texts = [chunk["text"] for chunk in chunks]
+    metadatas = [
+        {
+            "knowledge_base_id": knowledge_base_id,
+            "document_id": chunk["document_id"],
+            "chunk_id": chunk["id"],
+            "filename": chunk.get("filename", ""),
+            "chunk_index": chunk.get("chunk_index", 0),
+            "source_label": chunk.get("source_label", ""),
+            "section_title": chunk.get("section_title"),
+        }
+        for chunk in chunks
+    ]
+    keyword_engine.build_index(_collection_name(knowledge_base_id), texts, metadatas)
+
+
 def delete_document_vectors(
     *,
     knowledge_base_id: str,
