@@ -11,19 +11,11 @@ import DocumentPanel from './components/DocumentPanel.vue'
 import DebugPanel from './components/DebugPanel.vue'
 import ConversationPanel from './components/ConversationPanel.vue'
 
-// -- 知识库 --
 const kb = useKnowledgeBases()
-
-// -- 文档 --
 const docs = useDocuments(kb.selectedId)
-
-// -- 问答 --
 const qa = useQA(kb.selectedId, docs.indexedCount)
-
-// -- 对话 --
 const conv = useConversation(kb.selectedId, docs.indexedCount)
 
-// 知识库切换时联动加载
 const selectKb = async (id: string) => {
   kb.selectedId.value = id
   qa.answer.value = null
@@ -35,20 +27,18 @@ const selectKb = async (id: string) => {
 }
 
 const createKb = async () => {
-  const kb_data = await kb.create()
-  if (kb_data) {
+  const data = await kb.create()
+  if (data) {
     await docs.load()
     await qa.loadHistory()
   }
 }
 
-// 选历史问答项
 const selectHistoryItem = (item: QuestionAnswer) => {
   qa.selectHistoryItem(item)
   qa.qaActiveTab.value = 'debug'
 }
 
-// 生命周期
 onMounted(() => kb.load())
 onUnmounted(() => docs.stopPolling())
 </script>
@@ -72,8 +62,8 @@ onUnmounted(() => docs.stopPolling())
         :creating="kb.creating.value"
         :kbSearch="kb.kbSearch.value"
         :createForm="kb.createForm.value"
-        @update:kbSearch="kb.kbSearch.value = $event"
-        @update:createForm="kb.createForm.value = $event"
+        @update:kbSearch="(v: string) => kb.kbSearch.value = v"
+        @update:createForm="(v: { name: string; description: string }) => kb.createForm.value = v"
         @select="selectKb"
         @create="createKb"
         @remove="kb.remove"
@@ -118,16 +108,16 @@ onUnmounted(() => docs.stopPolling())
               :filterOptions="docs.filterOptions.value"
               :selectAll="docs.selectAll.value"
               :indexedCount="docs.indexedCount.value"
-              @update:documentSearch="docs.documentSearch.value = $event"
-              @update:documentFilter="docs.documentFilter.value = $event"
-              @update:uploadZoneVisible="docs.uploadZoneVisible.value = $event"
-              @update:selectAll="docs.selectAll.value = $event"
+              @update:documentSearch="(v: string) => docs.documentSearch.value = v"
+              @update:documentFilter="(v: string) => docs.documentFilter.value = v"
+              @update:uploadZoneVisible="(v: boolean) => docs.uploadZoneVisible.value = v"
+              @update:selectAll="(v: boolean) => docs.selectAll.value = v"
               @refresh="docs.load"
-              @goPage="docs.goPage"
-              @toggleSelect="docs.toggleSelect"
-              @parseDocument="docs.parseDocument"
-              @indexDocument="docs.indexDocument"
-              @removeDocument="docs.removeDocument"
+              @goPage="(p: number) => docs.goPage(p)"
+              @toggleSelect="(id: string) => docs.toggleSelect(id)"
+              @parseDocument="(d: any) => docs.parseDocument(d)"
+              @indexDocument="(d: any) => docs.indexDocument(d)"
+              @removeDocument="(d: any) => docs.removeDocument(d)"
               @parsePending="docs.parsePending"
               @indexPending="docs.indexPending"
               @reindexAll="docs.reindexAll"
@@ -163,16 +153,16 @@ onUnmounted(() => docs.stopPolling())
                 :citedVectorIds="qa.citedVectorIds.value"
                 :retrievalSummary="qa.retrievalSummary.value"
                 :retrievalQuery="qa.retrievalQuery.value"
-                @update:question="qa.question.value = $event"
-                @update:topK="qa.topK.value = $event"
-                @update:qaActiveTab="qa.qaActiveTab.value = $event"
+                @update:question="(v: string) => qa.question.value = v"
+                @update:topK="(v: number) => qa.topK.value = v"
+                @update:qaActiveTab="(v: string) => qa.qaActiveTab.value = v"
                 @retrieve="qa.retrieveOnly"
                 @ask="qa.askQuestion"
-                @submitRating="qa.submitRating"
+                @submitRating="(id: string, r: number) => qa.submitRating(id, r)"
                 @selectHistoryItem="selectHistoryItem"
-                @deleteHistoryItem="qa.deleteHistoryItem"
+                @deleteHistoryItem="(item: any) => qa.deleteHistoryItem(item)"
                 @refreshHistory="qa.loadHistory"
-                @goQaPage="qa.goQaPage"
+                @goQaPage="(p: number) => qa.goQaPage(p)"
               />
 
               <ConversationPanel
@@ -184,10 +174,10 @@ onUnmounted(() => docs.stopPolling())
                 :streaming="conv.streaming.value"
                 :streamingAnswer="conv.streamingAnswer.value"
                 :messagesRef="conv.messagesRef.value"
-                @update:input="conv.input.value = $event"
+                @update:input="(v: string) => conv.input.value = v"
                 @ask="conv.ask"
                 @clear="conv.clear"
-                @submitRating="conv.updateLocalRating"
+                @submitRating="(id: string, r: number) => conv.updateLocalRating(id, r)"
               />
             </div>
           </div>
