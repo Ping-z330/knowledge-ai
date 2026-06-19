@@ -8,6 +8,8 @@ import { renderAnswerWithCitations, handleCitationClick, highlightSourceCitation
 import { getResultTitle, getResultSubtitle, getResultFilename, getResultSectionTitle, getResultChunkLabel } from '../utils/retrieval'
 import { scoreColor, scoreBarWidth, highlightText } from '../utils/citations'
 import HistoryPanel from './HistoryPanel.vue'
+import ConversationPanel from './ConversationPanel.vue'
+import type { ConversationMessage } from '../types'
 
 defineProps<{
   selectedKnowledgeBaseId: string
@@ -28,6 +30,12 @@ defineProps<{
   ratingSubmitting: boolean
   loadingHistory: boolean
   busyAnswerId: string
+  conversation: ConversationMessage[]
+  convInput: string
+  convAsking: boolean
+  convStreaming: boolean
+  convStreamingAnswer: string
+  convMessagesRef: HTMLElement | null
   qaActiveTab: string
   qaPage: number
   qaPageSize: number
@@ -48,6 +56,10 @@ const emit = defineEmits<{
   deleteHistoryItem: [item: QuestionAnswer]
   refreshHistory: []
   goQaPage: [page: number]
+  'update:convInput': [value: string]
+  convAsk: []
+  convClear: []
+  convSubmitRating: [answerId: string, rating: number]
 }>()
 </script>
 
@@ -207,6 +219,23 @@ const emit = defineEmits<{
           @delete="emit('deleteHistoryItem', $event)"
           @refresh="emit('refreshHistory')"
           @goPage="emit('goQaPage', $event)"
+        />
+      </a-tab-pane>
+
+      <a-tab-pane key="conversation" tab="对话">
+        <ConversationPanel
+          :selectedKnowledgeBaseId="selectedKnowledgeBaseId"
+          :indexedCount="indexedCount"
+          :conversation="conversation"
+          :input="convInput"
+          :asking="convAsking"
+          :streaming="convStreaming"
+          :streamingAnswer="convStreamingAnswer"
+          :messagesRef="convMessagesRef"
+          @update:input="(v: string) => emit('update:convInput', v)"
+          @ask="emit('convAsk')"
+          @clear="emit('convClear')"
+          @submitRating="(id: string, r: number) => emit('convSubmitRating', id, r)"
         />
       </a-tab-pane>
     </a-tabs>

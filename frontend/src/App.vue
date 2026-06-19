@@ -9,8 +9,6 @@ import Sidebar from './components/Sidebar.vue'
 import WelcomeCard from './components/WelcomeCard.vue'
 import DocumentPanel from './components/DocumentPanel.vue'
 import DebugPanel from './components/DebugPanel.vue'
-import ConversationPanel from './components/ConversationPanel.vue'
-
 const kb = useKnowledgeBases()
 const docs = useDocuments(kb.selectedId)
 const qa = useQA(kb.selectedId, docs.indexedCount)
@@ -153,6 +151,12 @@ onUnmounted(() => docs.stopPolling())
                 :citedVectorIds="qa.citedVectorIds.value"
                 :retrievalSummary="qa.retrievalSummary.value"
                 :retrievalQuery="qa.retrievalQuery.value"
+                :conversation="conv.conversation.value"
+                :convInput="conv.input.value"
+                :convAsking="conv.asking.value"
+                :convStreaming="conv.streaming.value"
+                :convStreamingAnswer="conv.streamingAnswer.value"
+                :convMessagesRef="conv.messagesRef.value"
                 @update:question="(v: string) => qa.question.value = v"
                 @update:topK="(v: number) => qa.topK.value = v"
                 @update:qaActiveTab="(v: string) => qa.qaActiveTab.value = v"
@@ -163,21 +167,10 @@ onUnmounted(() => docs.stopPolling())
                 @deleteHistoryItem="(item: any) => qa.deleteHistoryItem(item)"
                 @refreshHistory="qa.loadHistory"
                 @goQaPage="(p: number) => qa.goQaPage(p)"
-              />
-
-              <ConversationPanel
-                :selectedKnowledgeBaseId="kb.selectedId.value"
-                :indexedCount="docs.indexedCount.value"
-                :conversation="conv.conversation.value"
-                :input="conv.input.value"
-                :asking="conv.asking.value"
-                :streaming="conv.streaming.value"
-                :streamingAnswer="conv.streamingAnswer.value"
-                :messagesRef="conv.messagesRef.value"
-                @update:input="(v: string) => conv.input.value = v"
-                @ask="conv.ask"
-                @clear="conv.clear"
-                @submitRating="(id: string, r: number) => conv.updateLocalRating(id, r)"
+                @update:convInput="(v: string) => conv.input.value = v"
+                @convAsk="conv.ask"
+                @convClear="conv.clear"
+                @convSubmitRating="(id: string, r: number) => conv.updateLocalRating(id, r)"
               />
             </div>
           </div>

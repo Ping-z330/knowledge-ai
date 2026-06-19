@@ -19,7 +19,7 @@ const emit = defineEmits<{
   'update:input': [value: string]
   ask: []
   clear: []
-  submitRating: [answerId: string, rating: number, kbId: string]
+  submitRating: [answerId: string, rating: number]
 }>()
 
 const submitRating = async (answerId: string, rating: number, kbId: string) => {
