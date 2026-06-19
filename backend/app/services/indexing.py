@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from .embeddings import EmbeddingError, EmbeddingProvider, OpenAICompatibleEmbeddingProvider
+from .keyword_search import KeywordSearchEngine, get_keyword_engine
 from .vector_store import ChromaVectorStore, VectorRecord, VectorStore, VectorStoreError
 
 
@@ -77,12 +78,18 @@ def rebuild_keyword_index(
     *,
     knowledge_base_id: str,
     chunks: list[dict],
+    debounce: bool = True,
+    keyword_engine: KeywordSearchEngine | None = None,
 ) -> None:
-    """从知识库的所有 chunks 重建 BM25 关键词索引。"""
-    from .keyword_search import keyword_engine
+    """从知识库的所有 chunks 重建 BM25 关键词索引。
+
+    默认 debounce=True：连续多次调用只执行最后一次（批量索引时避免重复全量重建）。
+    传 debounce=False 立即执行（启动恢复时使用）。
+    """
+    engine = keyword_engine if keyword_engine is not None else get_keyword_engine()
 
     if not chunks:
-        keyword_engine.invalidate(_collection_name(knowledge_base_id))
+        engine.invalidate(_collection_name(knowledge_base_id))
         return
 
     texts = [chunk["text"] for chunk in chunks]
@@ -98,7 +105,24 @@ def rebuild_keyword_index(
         }
         for chunk in chunks
     ]
-    keyword_engine.build_index(_collection_name(knowledge_base_id), texts, metadatas)
+
+    if debounce:
+        engine.schedule_rebuild(_collection_name(knowledge_base_id), texts, metadatas)
+    else:
+        engine.build_index(_collection_name(knowledge_base_id), texts, metadatas)
+
+
+def invalidate_keyword_index(
+    *,
+    knowledge_base_id: str,
+    keyword_engine: KeywordSearchEngine | None = None,
+) -> None:
+    """销毁知识库的 BM25 关键词索引。
+
+    供路由层调用的薄包装，避免路由直接依赖 keyword_engine 导入。
+    """
+    engine = keyword_engine if keyword_engine is not None else get_keyword_engine()
+    engine.invalidate(_collection_name(knowledge_base_id))
 
 
 def delete_document_vectors(

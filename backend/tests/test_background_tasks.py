@@ -35,7 +35,7 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
-        from app.routers import knowledge_bases as router_module
+        from app.routers import documents as router_module
         from app.schemas import KnowledgeBaseCreate
         from app.services.chunker import TextChunk
         from app.services.document_parser import ExtractedDocument
@@ -86,7 +86,7 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         from app.repositories.chunks import ChunkRepository
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
-        from app.routers import knowledge_bases as router_module
+        from app.routers import documents as router_module
         from app.schemas import KnowledgeBaseCreate
         from app.services.chunker import TextChunk
         from app.services.indexing import IndexingResult
@@ -135,7 +135,7 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
-        from app.routers import knowledge_bases as router_module
+        from app.routers import documents as router_module
         from app.schemas import KnowledgeBaseCreate
 
         with connection_scope() as connection:
@@ -185,7 +185,7 @@ class BackgroundTaskRouteTest(unittest.TestCase):
         from app.database import connection_scope
         from app.repositories.documents import DocumentRepository
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
-        from app.routers import knowledge_bases as router_module
+        from app.routers import documents as router_module
         from app.schemas import KnowledgeBaseCreate
 
         with connection_scope() as connection:

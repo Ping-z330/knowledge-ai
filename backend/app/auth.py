@@ -1,3 +1,5 @@
+import secrets
+
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -20,7 +22,7 @@ def require_api_token(
             detail="Missing Authorization header. Provide Bearer <token>.",
         )
 
-    if credentials.credentials != expected:
+    if not secrets.compare_digest(credentials.credentials, expected):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid API token",

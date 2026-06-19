@@ -76,6 +76,7 @@ def _index_readme(knowledge_base_id: str):
         rebuild_keyword_index(
             knowledge_base_id=knowledge_base_id,
             chunks=ChunkRepository(connection).list_for_knowledge_base(knowledge_base_id),
+            debounce=False,
         )
 
 

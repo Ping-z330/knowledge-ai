@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from ..config import get_settings
 from .embeddings import EmbeddingError, EmbeddingProvider, OpenAICompatibleEmbeddingProvider
 from .indexing import _collection_name
+from .keyword_search import KeywordSearchEngine, get_keyword_engine
 from .vector_store import ChromaVectorStore, VectorSearchResult, VectorStore, VectorStoreError
 
 
@@ -25,6 +26,7 @@ def retrieve_chunks(
     top_k: int = 5,
     embedding_provider: EmbeddingProvider | None = None,
     vector_store: VectorStore | None = None,
+    keyword_engine: KeywordSearchEngine | None = None,
 ) -> list[RetrievedChunk]:
     clean_query = query.strip()
     if not clean_query:
@@ -58,9 +60,8 @@ def retrieve_chunks(
     vector_chunks = [_to_retrieved_chunk(r) for r in vector_results]
 
     # 关键词检索 (BM25)
-    from .keyword_search import keyword_engine
-
-    kw_results = keyword_engine.search(
+    engine = keyword_engine if keyword_engine is not None else get_keyword_engine()
+    kw_results = engine.search(
         _collection_name(knowledge_base_id),
         clean_query,
         top_k=max(top_k * 2, 10),

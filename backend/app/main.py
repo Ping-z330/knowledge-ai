@@ -1,15 +1,17 @@
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import connection_scope, init_db
-from .logging_config import setup_logging
-from .routers.knowledge_bases import router as knowledge_bases_router
-from .task_queue import TASK_INDEX, TASK_PARSE, task_queue
+from .logging_config import request_id_var, setup_logging
+from .routers import documents, history, knowledge_bases, qa
+from .dependencies import get_tq
+from .task_queue import TASK_INDEX, TASK_PARSE
 
 _logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ def _rebuild_all_keyword_indexes() -> None:
                         rebuild_keyword_index(
                             knowledge_base_id=kb_id,
                             chunks=[dict(r) for r in chunk_dicts],
+                            debounce=False,
                         )
                 finally:
                     db_conn.close()
@@ -91,25 +94,27 @@ def _recover_stuck_documents() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    setup_logging()
+    settings = get_settings()
+    setup_logging(json_format=settings.log_json)
     _logger.info("Starting Knowledge Agent backend")
     init_db()
     _recover_stuck_documents()
     _rebuild_all_keyword_indexes()
 
     # 注册任务队列处理器并启动 worker
-    from .routers.knowledge_bases import (
+    from .routers.documents import (
         _run_index_document_task,
         _run_parse_document_task,
     )
 
-    task_queue.register_handler(TASK_PARSE, _run_parse_document_task)
-    task_queue.register_handler(TASK_INDEX, _run_index_document_task)
-    task_queue.start()
+    tq = get_tq()
+    tq.register_handler(TASK_PARSE, _run_parse_document_task)
+    tq.register_handler(TASK_INDEX, _run_index_document_task)
+    tq.start()
 
     yield
 
-    task_queue.stop()
+    tq.stop()
     _logger.info("Shutting down Knowledge Agent backend")
 
 
@@ -117,17 +122,31 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
-    # CORS — 生产环境应限制 origins
+    # CORS — allow_origins 通过 CORS_ORIGINS 环境变量配置（逗号分隔），默认 "*"
+    cors_origins = settings.cors_origins
+    if cors_origins == "*":
+        allow_origins = ["*"]
+    else:
+        allow_origins = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
+    # X-Request-ID — 透传客户端传入的，否则生成新的
+    @app.middleware("http")
+    async def add_request_id(request: Request, call_next):
+        req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        request_id_var.set(req_id)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = req_id
+        return response
+
     # 限制上传请求体大小
-    from fastapi import Request
     from fastapi.responses import JSONResponse
 
     @app.middleware("http")
@@ -142,7 +161,10 @@ def create_app() -> FastAPI:
             )
         return await call_next(request)
 
-    app.include_router(knowledge_bases_router)
+    app.include_router(knowledge_bases.router)
+    app.include_router(documents.router)
+    app.include_router(qa.router)
+    app.include_router(history.router)
 
     @app.get("/")
     def root() -> dict[str, str]:

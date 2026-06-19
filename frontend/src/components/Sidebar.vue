@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { DatabaseOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { KnowledgeBase } from '../types'
 
@@ -9,17 +10,31 @@ defineProps<{
   loading: boolean
   creating: boolean
   kbSearch: string
-  createForm: { name: string; description: string }
 }>()
 
 const emit = defineEmits<{
   'update:kbSearch': [value: string]
-  'update:createForm': [value: { name: string; description: string }]
   select: [id: string]
-  create: []
+  create: [name: string, description: string]
   remove: [item: KnowledgeBase]
   refresh: []
 }>()
+
+const modalOpen = ref(false)
+const formName = ref('')
+const formDesc = ref('')
+
+const openCreate = () => {
+  formName.value = ''
+  formDesc.value = ''
+  modalOpen.value = true
+}
+
+const handleCreate = () => {
+  if (!formName.value.trim()) return
+  emit('create', formName.value.trim(), formDesc.value.trim())
+  modalOpen.value = false
+}
 </script>
 
 <template>
@@ -32,30 +47,17 @@ const emit = defineEmits<{
       </div>
     </div>
 
-    <section class="create-panel">
-      <a-input
-        :value="createForm.name"
-        placeholder="新知识库名称"
-        @update:value="emit('update:createForm', { ...createForm, name: $event })"
-      />
-      <a-textarea
-        :value="createForm.description"
-        placeholder="描述"
-        :rows="2"
-        @update:value="emit('update:createForm', { ...createForm, description: $event })"
-      />
-      <a-button type="primary" block :loading="creating" @click="emit('create')">
-        <template #icon><PlusOutlined /></template>
-        创建知识库
-      </a-button>
-    </section>
-
     <section class="kb-list">
       <div class="section-line">
         <span>知识库</span>
-        <a-button type="text" size="small" @click="emit('refresh')">
-          <template #icon><ReloadOutlined /></template>
-        </a-button>
+        <div class="section-line-actions">
+          <a-button type="text" size="small" @click="openCreate">
+            <template #icon><PlusOutlined /></template>
+          </a-button>
+          <a-button type="text" size="small" @click="emit('refresh')">
+            <template #icon><ReloadOutlined /></template>
+          </a-button>
+        </div>
       </div>
 
       <a-input
@@ -97,5 +99,25 @@ const emit = defineEmits<{
         <a-empty v-else-if="!filtered.length" description="没有匹配的知识库" />
       </a-spin>
     </section>
+
+    <a-modal
+      v-model:open="modalOpen"
+      title="创建知识库"
+      ok-text="创建"
+      cancel-text="取消"
+      :confirm-loading="creating"
+      @ok="handleCreate"
+    >
+      <a-input
+        v-model:value="formName"
+        placeholder="知识库名称"
+        style="margin-bottom: 12px"
+      />
+      <a-textarea
+        v-model:value="formDesc"
+        placeholder="描述（可选）"
+        :rows="2"
+      />
+    </a-modal>
   </aside>
 </template>

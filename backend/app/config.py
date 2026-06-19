@@ -19,6 +19,8 @@ load_dotenv(BACKEND_DIR / ".env", override=False)
 class Settings(BaseModel):
     app_name: str = "Knowledge Agent API"
     api_token: str = ""
+    cors_origins: str = "*"
+    log_json: bool = False
     database_url: str
     storage_dir: Path
     chroma_dir: Path
@@ -64,6 +66,8 @@ def _env_path(name: str, default: Path) -> Path:
 def get_settings() -> Settings:
     return Settings(
         api_token=os.getenv("API_TOKEN", ""),
+        cors_origins=os.getenv("CORS_ORIGINS", "*"),
+        log_json=os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes"),
         database_url=os.getenv("DATABASE_URL", _default_database_url()),
         storage_dir=_env_path("STORAGE_DIR", _default_storage_dir()),
         chroma_dir=_env_path("CHROMA_DIR", _default_chroma_dir()),

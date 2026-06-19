@@ -207,21 +207,6 @@ const emit = defineEmits<{
         </div>
       </a-tab-pane>
 
-      <a-tab-pane key="history" tab="最近问答">
-        <HistoryPanel
-          :questionAnswers="questionAnswers"
-          :loading="loadingHistory"
-          :busyAnswerId="busyAnswerId"
-          :qaPage="qaPage"
-          :qaPageSize="qaPageSize"
-          :qaTotal="qaTotal"
-          @select="emit('selectHistoryItem', $event)"
-          @delete="emit('deleteHistoryItem', $event)"
-          @refresh="emit('refreshHistory')"
-          @goPage="emit('goQaPage', $event)"
-        />
-      </a-tab-pane>
-
       <a-tab-pane key="conversation" tab="对话">
         <ConversationPanel
           :selectedKnowledgeBaseId="selectedKnowledgeBaseId"
@@ -236,6 +221,21 @@ const emit = defineEmits<{
           @ask="emit('convAsk')"
           @clear="emit('convClear')"
           @submitRating="(id: string, r: number) => emit('convSubmitRating', id, r)"
+        />
+      </a-tab-pane>
+
+      <a-tab-pane key="history" tab="最近问答">
+        <HistoryPanel
+          :questionAnswers="questionAnswers"
+          :loading="loadingHistory"
+          :busyAnswerId="busyAnswerId"
+          :qaPage="qaPage"
+          :qaPageSize="qaPageSize"
+          :qaTotal="qaTotal"
+          @select="emit('selectHistoryItem', $event)"
+          @delete="emit('deleteHistoryItem', $event)"
+          @refresh="emit('refreshHistory')"
+          @goPage="emit('goQaPage', $event)"
         />
       </a-tab-pane>
     </a-tabs>

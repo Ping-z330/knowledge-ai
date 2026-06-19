@@ -54,7 +54,7 @@ const uploadProps: UploadProps = {
   name: 'file',
   multiple: true,
   showUploadList: false,
-  accept: '.pdf,.doc,.docx,.md,.txt',
+  accept: '.pdf,.docx,.md,.txt',
   action: props.selectedKnowledgeBaseId
     ? `/api/knowledge-bases/${props.selectedKnowledgeBaseId}/documents`
     : '',
@@ -143,47 +143,51 @@ const uploadProps: UploadProps = {
 
       <div class="document-list">
         <article v-for="item in filtered" :key="item.id" class="document-row">
-          <a-checkbox :checked="selectedIds.has(item.id)" @change="emit('toggleSelect', item.id)" />
-          <div class="document-main">
-            <FileSearchOutlined class="file-icon" />
-            <div>
-              <h4>{{ item.filename }}</h4>
-              <p>{{ item.content_type }} · {{ formatDate(item.created_at) }}</p>
-              <p v-if="item.error_message" class="error-text">{{ item.error_message }}</p>
+          <div class="document-left">
+            <a-checkbox :checked="selectedIds.has(item.id)" @change="emit('toggleSelect', item.id)" />
+            <div class="document-actions">
+              <a-tooltip title="解析文档">
+                <a-button size="small"
+                  :disabled="item.parse_status === 'running' || item.index_status === 'running'"
+                  :loading="busyId === item.id"
+                  @click="emit('parseDocument', item)"
+                >
+                  <template #icon><FileSearchOutlined /></template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="索引文档">
+                <a-button size="small" type="primary" ghost
+                  :disabled="item.parse_status !== 'parsed' || item.index_status === 'running'"
+                  :loading="busyId === item.id"
+                  @click="emit('indexDocument', item)"
+                >
+                  <template #icon><ApiOutlined /></template>
+                </a-button>
+              </a-tooltip>
+              <a-popconfirm title="删除这个文档？" @confirm="emit('removeDocument', item)">
+                <a-tooltip title="删除文档">
+                  <a-button size="small" danger><template #icon><DeleteOutlined /></template></a-button>
+                </a-tooltip>
+              </a-popconfirm>
             </div>
           </div>
 
-          <a-tooltip :title="getDocumentStatusMeta(item).detail">
-            <a-tag class="document-status-pill" :color="getDocumentStatusMeta(item).tone">
-              <component :is="getDocumentStatusMeta(item).icon" />
-              {{ getDocumentStatusMeta(item).label }}
-            </a-tag>
-          </a-tooltip>
+          <div class="document-right">
+            <div class="document-main">
+              <FileSearchOutlined class="file-icon" />
+              <div class="document-meta">
+                <h4>{{ item.filename }}</h4>
+                <p>{{ item.content_type }} · {{ formatDate(item.created_at) }}</p>
+                <p v-if="item.error_message" class="error-text">{{ item.error_message }}</p>
+              </div>
+            </div>
 
-          <div class="document-actions">
-            <a-tooltip title="解析文档">
-              <a-button size="small"
-                :disabled="item.parse_status === 'running' || item.index_status === 'running'"
-                :loading="busyId === item.id"
-                @click="emit('parseDocument', item)"
-              >
-                <template #icon><FileSearchOutlined /></template>
-              </a-button>
+            <a-tooltip :title="getDocumentStatusMeta(item).detail">
+              <a-tag class="document-status-pill" :color="getDocumentStatusMeta(item).tone">
+                <component :is="getDocumentStatusMeta(item).icon" />
+                {{ getDocumentStatusMeta(item).label }}
+              </a-tag>
             </a-tooltip>
-            <a-tooltip title="索引文档">
-              <a-button size="small" type="primary" ghost
-                :disabled="item.parse_status !== 'parsed' || item.index_status === 'running'"
-                :loading="busyId === item.id"
-                @click="emit('indexDocument', item)"
-              >
-                <template #icon><ApiOutlined /></template>
-              </a-button>
-            </a-tooltip>
-            <a-popconfirm title="删除这个文档？" @confirm="emit('removeDocument', item)">
-              <a-tooltip title="删除文档">
-                <a-button size="small" danger><template #icon><DeleteOutlined /></template></a-button>
-              </a-tooltip>
-            </a-popconfirm>
           </div>
         </article>
 

@@ -172,6 +172,13 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
           })),
         }
         streaming.value = false
+        // 异常结束时尝试从 SSE done 事件之外的路径给出 answer id，以便评分按钮可用
+        if (!currentAnswerId.value) {
+          const match = questionAnswers.value.find(
+            (a) => a.question === question.value.trim() && a.answer === streamingAnswer.value,
+          )
+          currentAnswerId.value = match?.id || ''
+        }
       }
     }
   }

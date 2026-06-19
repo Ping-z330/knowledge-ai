@@ -65,6 +65,11 @@ class TaskQueue:
             self._worker_thread.join(timeout=10)
         _logger.info("Task worker stopped")
 
+    def reset(self) -> None:
+        """Stop worker and clear handlers (for test isolation)."""
+        self.stop()
+        self._handlers.clear()
+
     def _run(self) -> None:
         while self._running:
             try:

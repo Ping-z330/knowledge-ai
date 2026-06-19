@@ -33,11 +33,11 @@ class QuestionAnswerApiTest(unittest.TestCase):
     def test_question_endpoint_persists_answer_history(self) -> None:
         from app.database import connection_scope
         from app.repositories.knowledge_bases import KnowledgeBaseRepository
-        from app.routers import knowledge_bases as router_module
+        from app.routers import history, qa
         from app.schemas import KnowledgeBaseCreate, QuestionRequest
         from app.services.answering import AnswerResult, AnswerSource
 
-        original_answer_question = router_module.answer_question
+        original_answer_question = qa.answer_question
 
         def fake_answer_question(**kwargs: object) -> AnswerResult:
             return AnswerResult(
@@ -53,39 +53,39 @@ class QuestionAnswerApiTest(unittest.TestCase):
                 ],
             )
 
-        router_module.answer_question = fake_answer_question
+        qa.answer_question = fake_answer_question
         try:
             with connection_scope() as connection:
                 knowledge_base = KnowledgeBaseRepository(connection).create(
                     KnowledgeBaseCreate(name="产品库")
                 )
 
-            answer_response = router_module.answer_from_knowledge_base(
+            answer_response = qa.answer_from_knowledge_base(
                 knowledge_base["id"],
                 QuestionRequest(question="系统支持什么？", top_k=3),
             )
             self.assertEqual(answer_response["answer"], "系统支持知识库问答。[1]")
 
-            history = router_module.list_question_answers(
+            hist = history.list_question_answers(
                 knowledge_base["id"], limit=20, offset=0,
             )
-            self.assertEqual(len(history["items"]), 1)
-            self.assertEqual(history["total"], 1)
-            self.assertEqual(history["items"][0]["question"], "系统支持什么？")
-            self.assertEqual(history["items"][0]["answer"], "系统支持知识库问答。[1]")
-            self.assertEqual(history["items"][0]["top_k"], 3)
-            self.assertEqual(history["items"][0]["sources"][0]["citation"], 1)
+            self.assertEqual(len(hist["items"]), 1)
+            self.assertEqual(hist["total"], 1)
+            self.assertEqual(hist["items"][0]["question"], "系统支持什么？")
+            self.assertEqual(hist["items"][0]["answer"], "系统支持知识库问答。[1]")
+            self.assertEqual(hist["items"][0]["top_k"], 3)
+            self.assertEqual(hist["items"][0]["sources"][0]["citation"], 1)
 
-            delete_response = router_module.delete_question_answer(
+            delete_response = history.delete_question_answer(
                 knowledge_base["id"],
-                history["items"][0]["id"],
+                hist["items"][0]["id"],
             )
             self.assertEqual(delete_response.status_code, 204)
 
-            remaining = router_module.list_question_answers(knowledge_base["id"], limit=20, offset=0)
+            remaining = history.list_question_answers(knowledge_base["id"], limit=20, offset=0)
             self.assertEqual(remaining["items"], [])
         finally:
-            router_module.answer_question = original_answer_question
+            qa.answer_question = original_answer_question
 
 
 if __name__ == "__main__":
