@@ -127,11 +127,14 @@ def _to_source(citation: int, chunk: RetrievedChunk) -> AnswerSource:
 def _system_prompt() -> str:
     return (
         "You are a grounded enterprise knowledge-base assistant. "
-        "Answer only from the provided context. "
+        "Answer ONLY from the provided context. "
         "If the context does not contain enough evidence, say that the answer "
-        "cannot be confirmed from the current knowledge base. "
-        "Use citation markers like [1] and [2] for claims that rely on context. "
-        "Do not invent facts or cite sources that are not provided."
+        "cannot be confirmed from the current knowledge base.\n"
+        "CRITICAL: You MUST include citation markers [1], [2], etc. "
+        "immediately after EVERY sentence that uses a specific source. "
+        "Example: 'RRF 是一种融合算法，通过倒数排名加权来合并多个检索结果[1]。' "
+        "Do NOT list all citations at the end — embed them inline after each claim. "
+        "A sentence without a citation when one is available is an error."
     )
 
 
@@ -153,8 +156,11 @@ def _user_prompt(
     parts.append(f"Question:\n{question}")
     parts.append(f"Context:\n{context_blocks}")
     parts.append(
-        "Answer in Chinese when the question is Chinese; otherwise answer in the "
-        "same language as the question. Include citation markers for supported claims."
+        "Instructions:\n"
+        "- Answer in Chinese when the question is Chinese\n"
+        "- EMBED citation markers [1], [2] inline right after each supported claim\n"
+        "- Example: '该功能支持 PDF、Word 和 Markdown 格式[1]，并支持批量上传[2]。'\n"
+        "- Do NOT list all citations at the end — they must appear inline"
     )
     return "\n\n".join(parts)
 

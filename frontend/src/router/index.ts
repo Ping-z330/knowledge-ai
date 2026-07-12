@@ -13,6 +13,11 @@ const router = createRouter({
       name: 'workspace',
       component: () => import('../views/KbWorkspaceView.vue'),
     },
+    {
+      path: '/:kbId/documents',
+      name: 'documents',
+      component: () => import('../views/KbDocumentsView.vue'),
+    },
   ],
 })
 

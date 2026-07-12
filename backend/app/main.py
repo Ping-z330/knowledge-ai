@@ -1,4 +1,5 @@
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -17,8 +18,15 @@ _logger = logging.getLogger(__name__)
 
 
 def _rebuild_all_keyword_indexes() -> None:
-    """重建所有知识库的 BM25 关键词索引。"""
+    """重建所有知识库的 BM25 关键词索引，优先从磁盘加载。"""
     try:
+        from .dependencies import get_kw_engine
+
+        engine = get_kw_engine()
+        if engine.load_from_disk():
+            _logger.info("Keyword indexes restored from disk, skipping full rebuild")
+            return
+
         from .database import connect
         from .services.indexing import rebuild_keyword_index
 
@@ -99,6 +107,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _logger.info("Starting Knowledge Agent backend")
     init_db()
     _recover_stuck_documents()
+
+    # 设置关键词索引持久化目录
+    from .dependencies import get_kw_engine
+    from .config import BACKEND_DIR
+
+    get_kw_engine().set_persist_dir(BACKEND_DIR / "data")
     _rebuild_all_keyword_indexes()
 
     # 注册任务队列处理器并启动 worker
@@ -137,6 +151,27 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Rate limiting — 默认 60 req/min per IP
+    # 使用纯 ASGI middleware 避免 BaseHTTPMiddleware 与 StreamingResponse 的兼容问题
+    from .rate_limit import RateLimiter
+
+    rate_limit_req = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+    rate_limit_win = float(os.getenv("RATE_LIMIT_WINDOW", "60"))
+    _limiter = RateLimiter(max_requests=rate_limit_req, window_seconds=rate_limit_win)
+    _skip_paths = {"/health", "/"}
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        if request.url.path in _skip_paths:
+            return await call_next(request)
+        ip = request.client.host if request.client else "unknown"
+        if not _limiter.is_allowed(ip):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "请求过于频繁，请稍后重试。"},
+            )
+        return await call_next(request)
+
     # X-Request-ID — 透传客户端传入的，否则生成新的
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):
@@ -166,6 +201,24 @@ def create_app() -> FastAPI:
     app.include_router(qa.router)
     app.include_router(history.router)
 
+    from .routers import conversations
+
+    app.include_router(conversations.router)
+
+    # Agentic RAG 端点（可通过 AGENTIC_ENABLED 环境变量关闭）
+    if settings.agentic_enabled:
+        try:
+            from .routers import agentic_qa
+
+            app.include_router(agentic_qa.router)
+            _logger.info("Agentic RAG endpoints enabled")
+        except ImportError as exc:
+            _logger.warning(
+                "Agentic RAG endpoints disabled — missing dependencies: %s. "
+                "Install with: pip install langgraph langchain-core openai duckduckgo-search",
+                exc,
+            )
+
     @app.get("/")
     def root() -> dict[str, str]:
         return {"message": "Knowledge Agent backend is running"}
@@ -191,6 +244,30 @@ def create_app() -> FastAPI:
             checks["chromadb"] = "ok"
         except Exception as exc:
             checks["chromadb"] = f"error: {exc}"
+
+        # LLM
+        try:
+            import httpx
+            from .config import get_settings
+
+            settings = get_settings()
+            if settings.llm_base_url:
+                resp = httpx.get(
+                    f"{settings.llm_base_url.rstrip('/')}/models",
+                    headers={"Authorization": f"Bearer {settings.llm_api_key}"}
+                    if settings.llm_api_key
+                    else {},
+                    timeout=5.0,
+                    proxy=None,
+                )
+                if resp.status_code < 500:
+                    checks["llm"] = "ok"
+                else:
+                    checks["llm"] = f"error: status {resp.status_code}"
+            else:
+                checks["llm"] = "skipped (not configured)"
+        except Exception as exc:
+            checks["llm"] = f"error: {exc}"
 
         all_ok = all(v == "ok" for v in checks.values())
         return {"status": "ok" if all_ok else "degraded", "checks": checks}

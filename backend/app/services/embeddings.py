@@ -44,8 +44,6 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
             batch_size=settings.embedding_batch_size,
         )
 
-    # 生成文本的向量表示，如果提供者未正确配置则抛出嵌入错误，使用批处理方式调用嵌入接口以提高效率，
-    # 并对接口调用过程中可能发生的各种错误进行捕获和处理，确保返回的向量数据与输入文本数量匹配且格式正确，否则抛出嵌入错误
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
@@ -55,13 +53,34 @@ class OpenAICompatibleEmbeddingProvider(EmbeddingProvider):
                 "EMBEDDING_API_KEY, and EMBEDDING_MODEL."
             )
 
-        all_embeddings: list[list[float]] = []
-        batch_count = (len(texts) + self.batch_size - 1) // self.batch_size
-        for batch_index in range(batch_count):
-            start = batch_index * self.batch_size
-            batch = texts[start : start + self.batch_size]
-            all_embeddings.extend(self._embed_batch(batch))
-        return all_embeddings
+        # 查缓存
+        from .embedding_cache import get_cached, save, text_hash
+
+        hashes = [text_hash(t, self.model) for t in texts]
+        cached = get_cached(hashes)
+
+        # 只需对未缓存的文本调 API
+        uncached = [(i, texts[i]) for i, h in enumerate(hashes) if h not in cached]
+        if uncached:
+            uncached_texts = [t for _, t in uncached]
+            new_embeddings: list[list[float]] = []
+            batch_count = (len(uncached_texts) + self.batch_size - 1) // self.batch_size
+            for batch_index in range(batch_count):
+                start = batch_index * self.batch_size
+                batch = uncached_texts[start : start + self.batch_size]
+                new_embeddings.extend(self._embed_batch(batch))
+
+            # 写入缓存
+            save([
+                (hashes[uncached[i][0]], emb, self.model)
+                for i, emb in enumerate(new_embeddings)
+            ])
+            # 合并到 cached dict
+            for i, emb in enumerate(new_embeddings):
+                cached[hashes[uncached[i][0]]] = emb
+
+        # 按原始顺序返回
+        return [cached[h] for h in hashes]
 
     # 调用嵌入提供者生成分块文本的向量表示，如果嵌入过程中发生错误则捕获异常并抛出索引错误
     def _embed_batch(self, texts: list[str]) -> list[list[float]]:

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { DatabaseOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import { DatabaseOutlined, DeleteOutlined, MenuOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import type { KnowledgeBase } from '../types'
 
 defineProps<{
@@ -23,6 +23,7 @@ const emit = defineEmits<{
 const modalOpen = ref(false)
 const formName = ref('')
 const formDesc = ref('')
+const sidebarOpen = ref(false)
 
 const openCreate = () => {
   formName.value = ''
@@ -35,10 +36,23 @@ const handleCreate = () => {
   emit('create', formName.value.trim(), formDesc.value.trim())
   modalOpen.value = false
 }
+
+const selectKb = (id: string) => {
+  emit('select', id)
+  sidebarOpen.value = false
+}
 </script>
 
 <template>
-  <aside class="sidebar">
+  <!-- 移动端汉堡按钮 -->
+  <button class="sidebar-toggle" @click="sidebarOpen = !sidebarOpen" aria-label="菜单">
+    <MenuOutlined />
+  </button>
+
+  <!-- 移动端遮罩 -->
+  <div v-if="sidebarOpen" class="sidebar-overlay" @click="sidebarOpen = false" />
+
+  <aside class="sidebar" :class="{ open: sidebarOpen }">
     <div class="brand">
       <div class="brand-mark"><DatabaseOutlined /></div>
       <div>
@@ -76,7 +90,7 @@ const handleCreate = () => {
           :key="item.id"
           class="kb-item"
           :class="{ active: item.id === selectedId }"
-          @click="emit('select', item.id)"
+          @click="selectKb(item.id)"
         >
           <div class="kb-item-main">
             <span>{{ item.name }}</span>

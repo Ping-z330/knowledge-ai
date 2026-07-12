@@ -34,6 +34,7 @@ class QuestionAnswerRepository:
             SELECT
                 id,
                 knowledge_base_id,
+                conversation_id,
                 question,
                 answer,
                 sources_json,
@@ -55,6 +56,7 @@ class QuestionAnswerRepository:
             SELECT
                 id,
                 knowledge_base_id,
+                conversation_id,
                 question,
                 answer,
                 sources_json,
@@ -76,25 +78,29 @@ class QuestionAnswerRepository:
         answer: str,
         sources: list[dict],
         top_k: int,
+        conversation_id: str = "",
     ) -> dict:
         answer_id = str(uuid4())
         timestamp = _now()
+        conv_id = conversation_id or None
         self.connection.execute(
             """
             INSERT INTO question_answers (
                 id,
                 knowledge_base_id,
+                conversation_id,
                 question,
                 answer,
                 sources_json,
                 top_k,
                 created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 answer_id,
                 knowledge_base_id,
+                conv_id,
                 question,
                 answer,
                 json.dumps(sources, ensure_ascii=False),
@@ -106,6 +112,27 @@ class QuestionAnswerRepository:
         if created is None:
             raise RuntimeError("Failed to create question answer")
         return created
+
+    def list_by_conversation(self, conversation_id: str) -> list[dict]:
+        rows = self.connection.execute(
+            """
+            SELECT
+                id,
+                knowledge_base_id,
+                conversation_id,
+                question,
+                answer,
+                sources_json,
+                top_k,
+                rating,
+                created_at
+            FROM question_answers
+            WHERE conversation_id = ?
+            ORDER BY created_at ASC
+            """,
+            (conversation_id,),
+        ).fetchall()
+        return [_to_dict(row) for row in rows if row is not None]
 
     def count_for_knowledge_base(self, knowledge_base_id: str) -> int:
         row = self.connection.execute(

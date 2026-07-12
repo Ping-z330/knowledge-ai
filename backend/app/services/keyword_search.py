@@ -1,7 +1,9 @@
 import logging
+import pickle
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
@@ -20,6 +22,11 @@ class KeywordSearchEngine:
         self._indexes: dict[str, "BM25OkapiWrapper"] = {}
         self._timers: dict[str, threading.Timer] = {}
         self._lock = threading.Lock()
+        self._persist_dir: Path | None = None
+
+    def set_persist_dir(self, directory: Path) -> None:
+        """Set the directory for auto-persisting index snapshots."""
+        self._persist_dir = directory
 
     def build_index(
         self,
@@ -39,6 +46,7 @@ class KeywordSearchEngine:
         _logger.info(
             "BM25 index built for %s with %d documents", collection_name, len(texts)
         )
+        self._save()
 
     def schedule_rebuild(
         self,
@@ -70,6 +78,7 @@ class KeywordSearchEngine:
             timer = self._timers.pop(collection_name, None)
             if timer is not None:
                 timer.cancel()
+        self._save()
 
     def reset(self) -> None:
         """Clear all cached indexes and cancel pending rebuild timers (for test isolation)."""
@@ -78,6 +87,13 @@ class KeywordSearchEngine:
                 timer.cancel()
             self._indexes.clear()
             self._timers.clear()
+        # Also remove persisted file so tests start clean
+        path = self._persist_path()
+        if path is not None:
+            try:
+                path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def search(
         self,
@@ -113,6 +129,45 @@ class KeywordSearchEngine:
                 )
             )
         return results
+
+
+    # ── 持久化 ──────────────────────────────────────────
+
+    def _persist_path(self) -> Path | None:
+        if self._persist_dir is None:
+            return None
+        return self._persist_dir / "keyword_indexes.pkl"
+
+    def _save(self) -> None:
+        path = self._persist_path()
+        if path is None:
+            return
+        with self._lock:
+            data = dict(self._indexes)
+        try:
+            with open(path, "wb") as f:
+                pickle.dump(data, f)
+            _logger.debug("Keyword indexes saved to %s (%d collections)", path, len(data))
+        except Exception:
+            _logger.warning("Failed to save keyword indexes to disk", exc_info=True)
+
+    def load_from_disk(self) -> bool:
+        """Load indexes from the persisted pickle file. Returns True on success."""
+        path = self._persist_path()
+        if path is None or not path.exists():
+            return False
+        try:
+            with open(path, "rb") as f:
+                data: dict[str, BM25OkapiWrapper] = pickle.load(f)
+            with self._lock:
+                self._indexes.update(data)
+            _logger.info(
+                "Loaded %d keyword indexes from %s", len(data), path
+            )
+            return True
+        except Exception:
+            _logger.warning("Failed to load keyword indexes from disk", exc_info=True)
+            return False
 
 
 class BM25OkapiWrapper:

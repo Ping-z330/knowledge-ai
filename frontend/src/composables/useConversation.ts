@@ -1,16 +1,30 @@
 import { nextTick, ref, watch, type Ref } from 'vue'
-import type { AnswerSource, ConversationMessage } from '../types'
+import type { Conversation, ConversationMessage } from '../types'
+import { api } from '../utils/api'
+import { useQA } from './useQA'
 
 let convIdCounter = 0
 function nextConvId() { convIdCounter++; return `conv-${Date.now()}-${convIdCounter}` }
 
-export function useConversation(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<number>) {
+export function useConversation(
+  selectedKnowledgeBaseId: Ref<string>,
+  indexedCount: Ref<number>,
+  topK: Ref<number>,
+  agenticMode: Ref<boolean>,
+  enableWebSearch: Ref<boolean>,
+) {
+  const qa = useQA(selectedKnowledgeBaseId, indexedCount)
+
+  watch(topK, (v) => { qa.topK.value = v }, { immediate: true })
+  watch(agenticMode, (v) => { qa.agenticMode.value = v }, { immediate: true })
+  watch(enableWebSearch, (v) => { qa.enableWebSearch.value = v }, { immediate: true })
+
   const conversation = ref<ConversationMessage[]>([])
   const input = ref('')
-  const asking = ref(false)
-  const streaming = ref(false)
-  const streamingAnswer = ref('')
   const messagesRef = ref<HTMLElement | null>(null)
+  const conversationId = ref('')
+  const conversations = ref<Conversation[]>([])
+  const loadingConversations = ref(false)
 
   function scrollToBottom() {
     nextTick(() => {
@@ -19,10 +33,85 @@ export function useConversation(selectedKnowledgeBaseId: Ref<string>, indexedCou
     })
   }
 
-  watch([conversation, streamingAnswer], () => scrollToBottom(), { deep: true })
+  watch([conversation, qa.streamingAnswer], () => scrollToBottom(), { deep: true })
 
   function buildHistory(): { role: string; content: string }[] {
     return conversation.value.slice(-10).map((m) => ({ role: m.role, content: m.content }))
+  }
+
+  const loadConversations = async () => {
+    const kbId = selectedKnowledgeBaseId.value
+    if (!kbId) return
+    loadingConversations.value = true
+    try {
+      const { data } = await api.get<Conversation[]>(
+        `/knowledge-bases/${kbId}/conversations`,
+      )
+      conversations.value = data
+    } catch {
+      conversations.value = []
+    } finally {
+      loadingConversations.value = false
+    }
+  }
+
+  const loadConversation = async (convId: string) => {
+    const kbId = selectedKnowledgeBaseId.value
+    if (!kbId || !convId) return
+    try {
+      const { data } = await api.get<Conversation>(
+        `/knowledge-bases/${kbId}/conversations/${convId}`,
+      )
+      conversationId.value = convId
+      // Interleave Q&A pairs into conversation messages
+      const interleaved: ConversationMessage[] = []
+      for (const qaItem of data.messages || []) {
+        interleaved.push({
+          id: qaItem.id + '_q',
+          role: 'user',
+          content: qaItem.question,
+          sources: [],
+          rating: null,
+          answerId: '',
+          created_at: qaItem.created_at,
+        })
+        interleaved.push({
+          id: qaItem.id,
+          role: 'assistant',
+          content: qaItem.answer,
+          sources: qaItem.sources,
+          rating: qaItem.rating,
+          answerId: qaItem.id,
+          created_at: qaItem.created_at,
+        })
+      }
+      conversation.value = interleaved
+    } catch {
+      // conversation not found — start fresh
+    }
+  }
+
+  // KB 切换时自动恢复最近对话（必须在 loadConversations/loadConversation 定义之后）
+  watch(selectedKnowledgeBaseId, async (kbId) => {
+    if (!kbId) return
+    await loadConversations()
+    const latest = conversations.value[0]
+    if (latest) {
+      await loadConversation(latest.id)
+    }
+  }, { immediate: true })
+
+  const ensureConversation = async () => {
+    if (conversationId.value) return
+    const kbId = selectedKnowledgeBaseId.value
+    if (!kbId) return
+    try {
+      const { data } = await api.post<Conversation>(
+        `/knowledge-bases/${kbId}/conversations`,
+      )
+      conversationId.value = data.id
+    } catch {
+    }
   }
 
   const ask = async () => {
@@ -30,9 +119,7 @@ export function useConversation(selectedKnowledgeBaseId: Ref<string>, indexedCou
     if (!selectedKnowledgeBaseId.value || !question) return
     if (indexedCount.value === 0) return
 
-    asking.value = true
-    streaming.value = true
-    streamingAnswer.value = ''
+    await ensureConversation()
 
     const userMsg: ConversationMessage = {
       id: nextConvId(), role: 'user', content: question,
@@ -41,82 +128,47 @@ export function useConversation(selectedKnowledgeBaseId: Ref<string>, indexedCou
     conversation.value = [...conversation.value, userMsg]
     input.value = ''
 
-    const assistantMsg: ConversationMessage = {
-      id: nextConvId(), role: 'assistant', content: '',
-      sources: [], rating: null, answerId: '', created_at: new Date().toISOString(),
+    qa.question.value = question
+    const history = buildHistory()
+    const convId = conversationId.value
+    if (agenticMode.value) {
+      await qa.askAgentic(history, convId)
+    } else {
+      await qa.askQuestion(history, convId)
     }
 
-    try {
-      const token = import.meta.env.VITE_API_TOKEN
-      const response = await fetch(
-        `/api/knowledge-bases/${selectedKnowledgeBaseId.value}/questions/stream`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({ question, top_k: 5, conversation_history: buildHistory() }),
-        },
-      )
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || `HTTP ${response.status}`)
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('Stream not supported')
+    // 更新当前对话的标题（用第一个问题）
+    const answerText = qa.streamingAnswer.value || qa.answer.value?.answer || ''
+    const sources = qa.answer.value?.sources || qa.retrievalResults.value.map((r, i) => ({
+      citation: i + 1, vector_id: r.vector_id, text: r.text, score: r.score, metadata: r.metadata,
+    }))
 
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let sources: AnswerSource[] = []
+    if (answerText) {
+      const assistantMsg: ConversationMessage = {
+        id: nextConvId(), role: 'assistant', content: answerText,
+        sources, answerId: qa.currentAnswerId.value, rating: null,
+        created_at: new Date().toISOString(),
+      }
+      conversation.value = [...conversation.value, assistantMsg]
+    }
 
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6))
-            if (event.type === 'sources') {
-              sources = event.sources.map((s: AnswerSource) => ({
-                citation: s.citation ?? 0, vector_id: s.vector_id,
-                text: s.text, score: s.score, metadata: s.metadata,
-              }))
-            } else if (event.type === 'token') {
-              streamingAnswer.value += event.content
-            } else if (event.type === 'done') {
-              assistantMsg.content = streamingAnswer.value
-              assistantMsg.sources = sources
-              assistantMsg.answerId = event.answer_id || ''
-              conversation.value = [...conversation.value, assistantMsg]
-              streaming.value = false
-              streamingAnswer.value = ''
-            } else if (event.type === 'error') {
-              streaming.value = false
-            }
-          } catch { /* skip */ }
-        }
-      }
-    } catch {
-      streaming.value = false
-    } finally {
-      asking.value = false
-      if (streaming.value && streamingAnswer.value) {
-        assistantMsg.content = streamingAnswer.value
-        conversation.value = [...conversation.value, assistantMsg]
-        streaming.value = false
-        streamingAnswer.value = ''
-      }
-      if (!streaming.value && !assistantMsg.content && conversation.value.at(-1)?.id === assistantMsg.id) {
-        conversation.value = conversation.value.slice(0, -1)
-      }
+    // 首次问答后设置对话标题，刷新列表
+    if (conversationId.value) {
+      const kbId = selectedKnowledgeBaseId.value
+      try {
+        await api.patch(`/knowledge-bases/${kbId}/conversations/${conversationId.value}`, {
+          title: question.slice(0, 40),
+        })
+      } catch { /* ignore */ }
+      await loadConversations()
     }
   }
 
   const clear = () => {
     conversation.value = []
-    streaming.value = false
-    streamingAnswer.value = ''
+    conversationId.value = ''
+    qa.questionError.value = ''
+    loadConversations()
   }
 
   const updateLocalRating = (answerId: string, rating: number) => {
@@ -124,5 +176,13 @@ export function useConversation(selectedKnowledgeBaseId: Ref<string>, indexedCou
     if (msg) msg.rating = rating
   }
 
-  return { conversation, input, asking, streaming, streamingAnswer, messagesRef, ask, clear, updateLocalRating }
+  return {
+    conversation, input, messagesRef,
+    asking: qa.asking, streaming: qa.streaming, streamingAnswer: qa.streamingAnswer,
+    agenticStatus: qa.agenticStatus, agenticRounds: qa.agenticRounds,
+    agenticScore: qa.agenticScore, agenticSubQueries: qa.agenticSubQueries,
+    conversationId, conversations, loadingConversations,
+    loadConversations, loadConversation,
+    ask, clear, updateLocalRating,
+  }
 }

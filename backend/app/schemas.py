@@ -99,6 +99,7 @@ class QuestionRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     top_k: int = Field(default=5, ge=1, le=20)
     conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
+    conversation_id: str = ""
 
 
 class AnswerSourceRead(BaseModel):
@@ -120,6 +121,7 @@ class QuestionAnswerRead(BaseModel):
 
     id: str
     knowledge_base_id: str
+    conversation_id: str | None = None
     question: str
     answer: str
     sources: list[AnswerSourceRead]
@@ -130,3 +132,22 @@ class QuestionAnswerRead(BaseModel):
 
 class RatingUpdate(BaseModel):
     rating: int = Field(ge=-1, le=1)
+
+
+class AgenticQuestionRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+    conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
+    max_retrieval_rounds: int = Field(default=3, ge=1, le=5)
+    enable_web_search: bool = False
+    conversation_id: str = ""
+
+
+class AgenticQuestionResponse(BaseModel):
+    question: str
+    answer: str
+    sources: list[AnswerSourceRead]
+    retrieval_rounds_used: int
+    context_score: int | None
+    web_search_used: bool
+    sub_queries_used: list[str]

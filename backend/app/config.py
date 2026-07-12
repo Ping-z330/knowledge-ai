@@ -32,6 +32,10 @@ class Settings(BaseModel):
     llm_base_url: str
     llm_api_key: str
     llm_model: str
+    # Agentic RAG
+    agentic_enabled: bool = True
+    agentic_max_retrieval_rounds: int = 3
+    agentic_web_search_provider: str = "duckduckgo"
 
 
 # 定义默认数据库URL、默认存储目录和默认Chroma目录的函数
@@ -79,4 +83,12 @@ def get_settings() -> Settings:
         llm_base_url=os.getenv("LLM_BASE_URL", ""),
         llm_api_key=os.getenv("LLM_API_KEY", ""),
         llm_model=os.getenv("LLM_MODEL", ""),
+        agentic_enabled=os.getenv("AGENTIC_ENABLED", "true").lower()
+        in ("1", "true", "yes"),
+        agentic_max_retrieval_rounds=int(
+            os.getenv("AGENTIC_MAX_RETRIEVAL_ROUNDS", "3")
+        ),
+        agentic_web_search_provider=os.getenv(
+            "AGENTIC_WEB_SEARCH_PROVIDER", "duckduckgo"
+        ),
     )

@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { KnowledgeBase } from './types'
 import { useKnowledgeBases } from './composables/useKnowledgeBases'
 import Sidebar from './components/Sidebar.vue'
+import ErrorToast from './components/ErrorToast.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +47,7 @@ onMounted(() => kb.load())
       },
     }"
   >
+    <ErrorToast />
     <main class="shell">
       <Sidebar
         :knowledgeBases="kb.knowledgeBases.value"
@@ -61,7 +63,7 @@ onMounted(() => kb.load())
         @refresh="kb.load"
       />
 
-      <section class="workspace">
+      <section class="workspace" :class="{ 'workspace-qa': $route.name === 'workspace' }">
         <router-view />
       </section>
     </main>

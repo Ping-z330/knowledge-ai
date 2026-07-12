@@ -36,9 +36,19 @@ export type QuestionResponse = {
 export type QuestionAnswer = QuestionResponse & {
   id: string
   knowledge_base_id: string
+  conversation_id: string | null
   top_k: number
   rating: number | null
   created_at: string
+}
+
+export type Conversation = {
+  id: string
+  knowledge_base_id: string
+  title: string
+  created_at: string
+  updated_at: string
+  messages?: QuestionAnswer[]
 }
 
 export type RetrievalResult = {
@@ -73,6 +83,16 @@ export type ConversationMessage = {
 export type BatchTaskResponse = {
   scheduled: number
   document_ids: string[]
+}
+
+export type AgenticQuestionResponse = {
+  question: string
+  answer: string
+  sources: AnswerSource[]
+  retrieval_rounds_used: number
+  context_score: number | null
+  web_search_used: boolean
+  sub_queries_used: string[]
 }
 
 export type DocumentStatusTone = 'default' | 'processing' | 'success' | 'error'

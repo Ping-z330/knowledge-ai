@@ -110,6 +110,7 @@ def init_db() -> None:
             CREATE TABLE IF NOT EXISTS question_answers (
                 id TEXT PRIMARY KEY,
                 knowledge_base_id TEXT NOT NULL,
+                conversation_id TEXT,
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
                 sources_json TEXT NOT NULL,
@@ -141,6 +142,20 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_tasks_status
             ON tasks(status);
+
+            CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY,
+                knowledge_base_id TEXT NOT NULL,
+                title TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (knowledge_base_id)
+                    REFERENCES knowledge_bases(id)
+                    ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_conversations_knowledge_base_id
+            ON conversations(knowledge_base_id);
             """
         )
 
@@ -151,3 +166,31 @@ def init_db() -> None:
             )
         except Exception:
             pass
+
+        # 兼容已有数据库：添加 conversation_id 列
+        try:
+            connection.execute(
+                "ALTER TABLE question_answers ADD COLUMN conversation_id TEXT"
+            )
+        except Exception:
+            pass
+        # 为 conversation_id 创建索引（新老数据库都需要）
+        try:
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_question_answers_conversation_id "
+                "ON question_answers(conversation_id)"
+            )
+        except Exception:
+            pass
+
+        # Embedding 缓存表
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS embedding_cache (
+                text_hash TEXT PRIMARY KEY,
+                embedding_json TEXT NOT NULL,
+                model TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )

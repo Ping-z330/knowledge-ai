@@ -1,60 +1,73 @@
 <script setup lang="ts">
-import { ClockCircleOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import type { QuestionAnswer } from '../types'
+import { MessageOutlined, DeleteOutlined, ReloadOutlined, PlusOutlined } from '@ant-design/icons-vue'
+import type { Conversation } from '../types'
 import { formatDate } from '../utils/format'
 
 defineProps<{
-  questionAnswers: QuestionAnswer[]
+  conversations: Conversation[]
   loading: boolean
-  busyAnswerId: string
-  qaPage: number
-  qaPageSize: number
-  qaTotal: number
+  conversationId: string
 }>()
 
 const emit = defineEmits<{
-  select: [item: QuestionAnswer]
-  delete: [item: QuestionAnswer]
+  select: [item: Conversation]
+  delete: [item: Conversation]
   refresh: []
-  goPage: [page: number]
+  newConversation: []
 }>()
 </script>
 
 <template>
   <div class="history-block history-block-tab">
     <div class="history-head">
-      <div><h4>最近问答</h4><p>保存当前知识库的问答记录</p></div>
-      <a-button size="small" @click="emit('refresh')"><template #icon><ReloadOutlined /></template></a-button>
+      <div><h4>对话列表</h4><p>{{ conversations.length ? `${conversations.length} 个对话` : '开始一段新对话' }}</p></div>
+      <div class="history-head-actions">
+        <a-button size="small" type="primary" @click="emit('newConversation')">
+          <template #icon><PlusOutlined /></template>
+          新对话
+        </a-button>
+        <a-button size="small" @click="emit('refresh')">
+          <template #icon><ReloadOutlined /></template>
+        </a-button>
+      </div>
     </div>
 
     <a-spin :spinning="loading">
       <div class="history-list">
-        <article v-for="item in questionAnswers" :key="item.id" class="history-row" @click="emit('select', item)">
+        <article
+          v-for="conv in conversations"
+          :key="conv.id"
+          class="history-row"
+          :class="{ active: conv.id === conversationId }"
+          @click="emit('select', conv)"
+        >
           <div class="history-main">
-            <ClockCircleOutlined />
+            <MessageOutlined />
             <div>
-              <h5>{{ item.question }}</h5>
-              <p>{{ item.answer }}</p>
-              <small>{{ formatDate(item.created_at) }} · top {{ item.top_k }}</small>
+              <h5>{{ conv.title || '新对话' }}</h5>
+              <small>{{ formatDate(conv.updated_at || conv.created_at) }}</small>
             </div>
           </div>
-          <a-popconfirm title="删除这条问答历史？" @confirm.stop="emit('delete', item)">
-            <a-button size="small" danger :loading="busyAnswerId === item.id" @click.stop>
+          <a-popconfirm title="删除这段对话？" @confirm.stop="emit('delete', conv)">
+            <a-button size="small" danger @click.stop>
               <template #icon><DeleteOutlined /></template>
             </a-button>
           </a-popconfirm>
         </article>
 
-        <a-empty v-if="!questionAnswers.length" description="还没有问答历史" />
-
-        <div v-if="qaTotal > qaPageSize" class="pagination-row">
-          <a-pagination
-            :current="qaPage" :page-size="qaPageSize" :total="qaTotal"
-            :show-size-changer="false" size="small"
-            @change="(p: number) => emit('goPage', p)"
-          />
-        </div>
+        <a-empty v-if="!conversations.length" description="还没有对话记录" />
       </div>
     </a-spin>
   </div>
 </template>
+
+<style scoped>
+.history-head-actions {
+  display: flex;
+  gap: 6px;
+}
+.history-row.active {
+  background: #f0f7f0;
+  border-color: #2f6f5e;
+}
+</style>

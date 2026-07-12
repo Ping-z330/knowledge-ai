@@ -98,6 +98,7 @@ def answer_from_knowledge_base(
             answer=result.answer,
             sources=sources,
             top_k=payload.top_k,
+            conversation_id=payload.conversation_id,
         )
 
     return {
@@ -152,6 +153,7 @@ def answer_from_knowledge_base_stream(
                     answer=full_answer,
                     sources=sources_data,
                     top_k=payload.top_k,
+                    conversation_id=payload.conversation_id,
                 )
                 answer_id = created["id"]
         except Exception:
