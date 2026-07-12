@@ -99,6 +99,10 @@ flowchart LR
 - 设计决策文档（`docs/decisions.md`）+ 设计规范文档（`DESIGN.md`）
 - RAGAS 对比评测结果（传统 vs Agentic）
 
+### 检索增强
+- Cross-encoder 重排（可选）：候选 4 倍扩召回，BGE-Reranker 精排取 Top-K
+- 支持本地 HuggingFace 模型 / 硅基流动云端 API 两种后端，`CROSS_ENCODER_PROVIDER` 切换
+
 ### 性能优化
 - BM25 索引 pickle 持久化，重启秒加载，免全量重建
 - Embedding 向量 SQLite 缓存，相同文本不重复调 API
@@ -130,7 +134,8 @@ flowchart LR
 │   │   │   ├── query_analysis.py    #   查询复杂度分析 + 子问题拆解
 │   │   │   ├── self_corrective.py   #   上下文评估 + 查询改写
 │   │   │   ├── web_search.py        #   DuckDuckGo Web 搜索回退
-│   │   │   └── embedding_cache.py   #   Embedding 向量 SQLite 缓存
+│   │   │   ├── embedding_cache.py   #   Embedding 向量 SQLite 缓存
+│   │   │   └── reranker.py          #   Cross-encoder 重排（本地/云端）
 │   │   ├── auth.py           # API token 认证（时序安全比较）
 │   │   ├── config.py         # 环境变量配置（含 Agentic 开关）
 │   │   ├── rate_limit.py     # 滑动窗口 IP 限流中间件
@@ -227,6 +232,11 @@ LLM_MODEL=qwen2.5:7b
 - `AGENTIC_MAX_RETRIEVAL_ROUNDS` 控制 Agentic 最大检索重试轮数（默认 `3`）。
 - `RATE_LIMIT_REQUESTS` 每个 IP 每分钟最大请求数（默认 `60`），设为 `0` 关闭限流。
 - `RATE_LIMIT_WINDOW` 限流滑动窗口秒数（默认 `60`）。
+- `CROSS_ENCODER_ENABLED` 启用跨编码器重排（默认 `false`），开启后检索候选数自动扩大 4 倍再精筛。
+- `CROSS_ENCODER_PROVIDER` 重排后端：`siliconflow`（推荐，云端 API）或 `local`（本地 HuggingFace 模型）。
+- `CROSS_ENCODER_MODEL` 重排模型名（默认 `BAAI/bge-reranker-v2-m3`）。
+- `SILICONFLOW_API_KEY` 硅基流动 API Key（使用云端重排时必填）。
+- `SILICONFLOW_BASE_URL` 硅基流动 API 地址（默认 `https://api.siliconflow.cn/v1`）。
 - `.env` 已加入 `.gitignore`，不要提交真实密钥。
 - 后端对本地 OpenAI-compatible 请求会禁用系统代理，避免访问 `127.0.0.1:11434` 时被代理转发导致 502。
 - 服务启动时会自动将卡在 `running` 状态的文档标记为 `failed`，防止重启导致任务丢失。

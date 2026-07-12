@@ -36,6 +36,12 @@ class Settings(BaseModel):
     agentic_enabled: bool = True
     agentic_max_retrieval_rounds: int = 3
     agentic_web_search_provider: str = "duckduckgo"
+    # Cross-encoder rerank
+    cross_encoder_enabled: bool = False
+    cross_encoder_provider: str = "siliconflow"  # "siliconflow" or "local"
+    cross_encoder_model: str = "BAAI/bge-reranker-v2-m3"
+    siliconflow_api_key: str = ""
+    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
 
 
 # 定义默认数据库URL、默认存储目录和默认Chroma目录的函数
@@ -90,5 +96,15 @@ def get_settings() -> Settings:
         ),
         agentic_web_search_provider=os.getenv(
             "AGENTIC_WEB_SEARCH_PROVIDER", "duckduckgo"
+        ),
+        cross_encoder_enabled=os.getenv("CROSS_ENCODER_ENABLED", "false").lower()
+        in ("1", "true", "yes"),
+        cross_encoder_provider=os.getenv("CROSS_ENCODER_PROVIDER", "siliconflow"),
+        cross_encoder_model=os.getenv(
+            "CROSS_ENCODER_MODEL", "BAAI/bge-reranker-v2-m3"
+        ),
+        siliconflow_api_key=os.getenv("SILICONFLOW_API_KEY", ""),
+        siliconflow_base_url=os.getenv(
+            "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
         ),
     )

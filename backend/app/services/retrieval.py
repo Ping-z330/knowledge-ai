@@ -67,13 +67,28 @@ def retrieve_chunks(
         top_k=max(top_k * 2, 10),
     )
 
-    # RRF 融合
+    # RRF 融合（多取一些候选供重排）
+    candidate_k = top_k * 4 if settings.cross_encoder_enabled else top_k
     if kw_results:
-        merged = _rrf_fusion(vector_chunks, kw_results, top_k)
+        merged = _rrf_fusion(vector_chunks, kw_results, candidate_k)
     else:
-        merged = vector_chunks[:top_k]
+        merged = vector_chunks[:candidate_k]
 
-    return merged
+    # Cross-encoder 重排
+    if settings.cross_encoder_enabled and len(merged) > top_k:
+        try:
+            from .reranker import get_reranker
+
+            reranker = get_reranker()
+            if reranker is not None:
+                texts = [chunk.text for chunk in merged]
+                ranked = reranker.rerank(clean_query, texts, top_n=top_k)
+                merged = [merged[r.index] for r in ranked]
+        except Exception:
+            # 重排失败时降级为原始结果
+            merged = merged[:top_k]
+
+    return merged[:top_k]
 
 
 def _to_retrieved_chunk(result: VectorSearchResult) -> RetrievedChunk:
