@@ -10,7 +10,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'cd ../backend && .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000',
+      command: 'cd ../backend && PY="$( [ -f .venv/bin/python ] && echo .venv/bin/python || echo python3 )" && $PY -m uvicorn app.main:app --host 127.0.0.1 --port 8000',
       port: 8000,
       timeout: 10000,
       reuseExistingServer: true,
