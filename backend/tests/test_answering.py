@@ -51,7 +51,7 @@ class AnsweringServiceTest(unittest.TestCase):
         self.assertTrue(llm.called)
         self.assertIn("[1] 系统支持知识库问答。", llm.user_prompt or "")
         self.assertIn("[2] 回答必须展示引用来源。", llm.user_prompt or "")
-        self.assertIn("Do not invent facts", llm.system_prompt or "")
+        self.assertIn("Answer ONLY from the provided context", llm.system_prompt or "")
 
     def test_answer_question_returns_fallback_without_context(self) -> None:
         from app.services.answering import NO_CONTEXT_ANSWER, answer_question

@@ -17,7 +17,7 @@ class WebSearchTest(unittest.TestCase):
         mock_ddgs.__exit__ = MagicMock(return_value=None)
         mock_ddgs.text = MagicMock(return_value=fake_raw)
 
-        with patch("duckduckgo_search.DDGS", return_value=mock_ddgs):
+        with patch("ddgs.DDGS", return_value=mock_ddgs):
             from app.services.web_search import search_web
             results = search_web("test query", max_results=3)
 
