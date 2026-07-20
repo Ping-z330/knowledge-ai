@@ -5,7 +5,7 @@ test.describe('Knowledge Agent — Smoke Tests', () => {
   test('welcome page loads', async ({ page }) => {
     await page.goto('/')
     await expect(page.locator('.dashboard-hero')).toBeVisible()
-    await expect(page.locator('.dashboard-hero-text h2')).toHaveText('知识库管理')
+    await expect(page.locator('.dashboard-hero-text h2')).toHaveText('Knowledge Agent')
   })
 
   test('create knowledge base', async ({ page }) => {
