@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import type { AnswerSource, QuestionAnswer, QuestionResponse, RetrievalResult } from '../types'
+import type { AnswerSource, QuestionAnswer, QuestionResponse, RagStrategy, RetrievalResult } from '../types'
 import { api, extractApiError } from '../utils/api'
 import { streamSSE } from '../utils/sse'
 
@@ -20,8 +20,8 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
   const busyAnswerId = ref('')
   const qaActiveTab = ref('conversation')
 
-  // Agentic 模式
-  const agenticMode = ref(false)
+  const strategy = ref<RagStrategy>('auto')
+  const strategyUsed = ref<'standard' | 'agentic' | ''>('')
   const agenticStatus = ref('')
   const agenticRounds = ref(0)
   const agenticScore = ref<number | null>(null)
@@ -111,9 +111,20 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
     streamingAnswer.value = ''
     questionError.value = ''
     answer.value = null
+    agenticStatus.value = '正在选择检索策略...'
+    agenticRounds.value = 0
+    agenticScore.value = null
+    agenticSubQueries.value = []
+    strategyUsed.value = ''
     try {
       const token: string | undefined = import.meta.env.VITE_API_TOKEN
-      const body: Record<string, unknown> = { question: question.value.trim(), top_k: topK.value }
+      const body: Record<string, unknown> = {
+        question: question.value.trim(),
+        top_k: topK.value,
+        strategy: strategy.value,
+        max_retrieval_rounds: 3,
+        enable_web_search: enableWebSearch.value,
+      }
       if (conversationHistory) body.conversation_history = conversationHistory
       if (convId) body.conversation_id = convId
       for await (const event of streamSSE(
@@ -121,7 +132,16 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
         body,
         token,
       )) {
-        if (event.type === 'sources') {
+        if (event.type === 'status') {
+          strategyUsed.value = event.strategy as 'standard' | 'agentic'
+          agenticStatus.value =
+            strategyUsed.value === 'agentic' ? 'Agentic 检索完成' : '直接检索完成'
+        } else if (event.type === 'trace') {
+          agenticRounds.value = (event.retrieval_rounds as number) ?? 0
+          agenticScore.value = (event.context_score as number) ?? null
+          agenticSubQueries.value = (event.sub_queries as string[]) ?? []
+          if (event.fallback_from) agenticStatus.value = 'Agentic 失败，已降级为标准检索'
+        } else if (event.type === 'sources') {
           retrievalResults.value = (event.sources as AnswerSource[]).map((s) => ({
             vector_id: s.vector_id, text: s.text, score: s.score, metadata: s.metadata,
           }))
@@ -159,95 +179,6 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
         }
         streaming.value = false
         // 异常结束时尝试从 SSE done 事件之外的路径给出 answer id，以便评分按钮可用
-        if (!currentAnswerId.value) {
-          const match = questionAnswers.value.find(
-            (a) => a.question === question.value.trim() && a.answer === streamingAnswer.value,
-          )
-          currentAnswerId.value = match?.id || ''
-        }
-      }
-    }
-  }
-
-  const askAgentic = async (conversationHistory?: { role: string; content: string }[], convId?: string) => {
-    if (!selectedKnowledgeBaseId.value || !question.value.trim()) return
-    if (indexedCount.value === 0) {
-      questionError.value = '当前知识库还没有已索引文档。'
-      answer.value = null
-      retrievalResults.value = []
-      return
-    }
-    asking.value = true
-    streaming.value = true
-    streamingAnswer.value = ''
-    questionError.value = ''
-    answer.value = null
-    agenticStatus.value = '正在分析查询...'
-    agenticRounds.value = 0
-    agenticScore.value = null
-    agenticSubQueries.value = []
-
-    try {
-      const token: string | undefined = import.meta.env.VITE_API_TOKEN
-      const body: Record<string, unknown> = {
-        question: question.value.trim(),
-        top_k: topK.value,
-        max_retrieval_rounds: 3,
-        enable_web_search: enableWebSearch.value,
-      }
-      if (conversationHistory) body.conversation_history = conversationHistory
-      if (convId) body.conversation_id = convId
-      for await (const event of streamSSE(
-        `/api/knowledge-bases/${selectedKnowledgeBaseId.value}/questions/agentic/stream`,
-        body,
-        token,
-      )) {
-        if (event.type === 'status') {
-          agenticStatus.value =
-            `检索完成 · ${event.rounds ?? '?'} 轮 · 上下文评分 ${event.context_score ?? '?'}`
-          agenticRounds.value = (event.rounds as number) ?? 0
-          agenticScore.value = (event.context_score as number) ?? null
-          agenticSubQueries.value = (event.sub_queries as string[]) ?? []
-        } else if (event.type === 'sources') {
-          retrievalResults.value = (event.sources as AnswerSource[]).map((s) => ({
-            vector_id: s.vector_id, text: s.text, score: s.score, metadata: s.metadata,
-          }))
-        } else if (event.type === 'token') {
-          streamingAnswer.value += event.content as string
-        } else if (event.type === 'done') {
-          answer.value = {
-            question: question.value.trim(),
-            answer: streamingAnswer.value,
-            sources: retrievalResults.value.map((r, i) => ({
-              citation: i + 1, vector_id: r.vector_id, text: r.text, score: r.score, metadata: r.metadata,
-            })),
-          }
-          currentAnswerId.value = (event.answer_id as string) || ''
-          streaming.value = false
-          agenticStatus.value = '完成'
-          await loadHistory()
-        } else if (event.type === 'error') {
-          questionError.value = (event.message as string) || 'Agentic stream error'
-          streaming.value = false
-          agenticStatus.value = '出错'
-        }
-      }
-    } catch (error) {
-      retrievalResults.value = []
-      streaming.value = false
-      agenticStatus.value = '请求失败'
-      questionError.value = error instanceof Error ? error.message : 'Agentic 流式请求失败'
-    } finally {
-      asking.value = false
-      if (streaming.value && !questionError.value) {
-        answer.value = {
-          question: question.value.trim(),
-          answer: streamingAnswer.value || '（回答中断）',
-          sources: retrievalResults.value.map((r, i) => ({
-            citation: i + 1, vector_id: r.vector_id, text: r.text, score: r.score, metadata: r.metadata,
-          })),
-        }
-        streaming.value = false
         if (!currentAnswerId.value) {
           const match = questionAnswers.value.find(
             (a) => a.question === question.value.trim() && a.answer === streamingAnswer.value,
@@ -304,8 +235,8 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
     loadingHistory, busyAnswerId, qaActiveTab, qaPage, qaPageSize, qaTotal,
     citedVectorIds, currentAnswerRating, retrievalCitationStats,
     retrievalQuery, retrievalSummary,
-    agenticMode, agenticStatus, agenticRounds, agenticScore, agenticSubQueries, enableWebSearch,
-    loadHistory, retrieveOnly, askQuestion, askAgentic, submitRating,
+    strategy, strategyUsed, agenticStatus, agenticRounds, agenticScore, agenticSubQueries, enableWebSearch,
+    loadHistory, retrieveOnly, askQuestion, submitRating,
     selectHistoryItem, deleteHistoryItem, goQaPage,
   }
 }

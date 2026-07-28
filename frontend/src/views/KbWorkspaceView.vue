@@ -6,7 +6,7 @@ import { useQA } from '../composables/useQA'
 import { useConversation } from '../composables/useConversation'
 import DebugPanel from '../components/DebugPanel.vue'
 import { api } from '../utils/api'
-import type { Conversation } from '../types'
+import type { Conversation, RagStrategy } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -17,10 +17,10 @@ const docs = useDocuments(kbId)
 const qa = useQA(kbId, docs.indexedCount)
 
 const topK = ref(5)
-const agenticMode = ref(false)
+const strategy = ref<RagStrategy>('auto')
 const enableWebSearch = ref(false)
 
-const conv = useConversation(kbId, docs.indexedCount, topK, agenticMode, enableWebSearch)
+const conv = useConversation(kbId, docs.indexedCount, topK, strategy, enableWebSearch)
 
 // KB 切换时加载文档
 watch(
@@ -77,7 +77,8 @@ onUnmounted(() => docs.stopPolling())
     :convStreamingAnswer="conv.streamingAnswer.value"
     :convMessagesRef="conv.messagesRef.value"
     :topK="topK"
-    :agenticMode="agenticMode"
+    :strategy="strategy"
+    :strategyUsed="conv.strategyUsed.value"
     :enableWebSearch="enableWebSearch"
     :agenticStatus="conv.agenticStatus.value"
     :agenticRounds="conv.agenticRounds.value"
@@ -87,7 +88,7 @@ onUnmounted(() => docs.stopPolling())
     :conversationId="conv.conversationId.value"
     :loadingConversations="conv.loadingConversations.value"
     @update:qaActiveTab="(v: string) => qa.qaActiveTab.value = v"
-    @update:agenticMode="(v: boolean) => agenticMode = v"
+    @update:strategy="(v: RagStrategy) => strategy = v"
     @update:enableWebSearch="(v: boolean) => enableWebSearch = v"
     @selectConversation="selectConversation"
     @deleteConversation="deleteConversation"

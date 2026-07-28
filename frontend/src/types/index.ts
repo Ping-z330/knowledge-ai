@@ -1,3 +1,4 @@
+// 数据库类型定义
 export type KnowledgeBase = {
   id: string
   name: string
@@ -85,15 +86,7 @@ export type BatchTaskResponse = {
   document_ids: string[]
 }
 
-export type AgenticQuestionResponse = {
-  question: string
-  answer: string
-  sources: AnswerSource[]
-  retrieval_rounds_used: number
-  context_score: number | null
-  web_search_used: boolean
-  sub_queries_used: string[]
-}
+export type RagStrategy = 'auto' | 'standard' | 'agentic'
 
 export type DocumentStatusTone = 'default' | 'processing' | 'success' | 'error'
 

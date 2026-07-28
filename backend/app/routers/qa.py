@@ -16,7 +16,8 @@ from ..schemas import (
     RetrievalRequest,
     RetrievalResponse,
 )
-from ..services.answering import AnsweringError, answer_question, answer_question_stream
+from ..services.answering import AnsweringError, answer_question, stream_prepared_answer
+from ..services.rag_execution import prepare_answer
 from ..services.retrieval import RetrievalError, retrieve_chunks
 
 router = APIRouter(
@@ -118,21 +119,31 @@ def answer_from_knowledge_base_stream(
             raise HTTPException(status_code=404, detail="Knowledge base not found")
 
     try:
-        sources, tokens = answer_question_stream(
+        prepared = prepare_answer(
             knowledge_base_id=knowledge_base_id,
             question=payload.question,
+            strategy=payload.strategy,
             top_k=payload.top_k,
             conversation_history=[
                 {"role": m.role, "content": m.content}
                 for m in payload.conversation_history
             ],
+            max_retrieval_rounds=payload.max_retrieval_rounds,
+            enable_web_search=payload.enable_web_search,
         )
+        tokens = stream_prepared_answer(prepared)
     except AnsweringError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to prepare streamed answer")
+        raise HTTPException(status_code=500, detail="Failed to prepare answer") from exc
 
-    sources_data = [_source_to_dict(s) for s in sources]
+    sources_data = [_source_to_dict(s) for s in prepared.sources]
 
     def sse_events():
+        trace = prepared.retrieval_trace
+        yield f"data: {json.dumps({'type': 'status', 'strategy': prepared.strategy_used}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'trace', **trace}, ensure_ascii=False)}\n\n"
         yield f"data: {json.dumps({'type': 'sources', 'sources': sources_data}, ensure_ascii=False)}\n\n"
         full_answer_parts: list[str] = []
         try:

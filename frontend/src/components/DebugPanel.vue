@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from 'vue'
 import { CheckCircleOutlined } from '@ant-design/icons-vue'
-import type { Conversation, ConversationMessage } from '../types'
+import type { Conversation, ConversationMessage, RagStrategy } from '../types'
 
 const HistoryPanel = defineAsyncComponent(() => import('./HistoryPanel.vue'))
 const ConversationPanel = defineAsyncComponent(() => import('./ConversationPanel.vue'))
@@ -19,7 +19,8 @@ defineProps<{
   convMessagesRef: HTMLElement | null
   // Agentic controls
   topK: number
-  agenticMode: boolean
+  strategy: RagStrategy
+  strategyUsed: 'standard' | 'agentic' | ''
   enableWebSearch: boolean
   agenticStatus: string
   agenticRounds: number
@@ -32,7 +33,7 @@ defineProps<{
 
 const emit = defineEmits<{
   'update:qaActiveTab': [value: string]
-  'update:agenticMode': [value: boolean]
+  'update:strategy': [value: RagStrategy]
   'update:enableWebSearch': [value: boolean]
   selectConversation: [item: Conversation]
   deleteConversation: [item: Conversation]
@@ -73,7 +74,8 @@ const emit = defineEmits<{
           :streamingAnswer="convStreamingAnswer"
           :messagesRef="convMessagesRef"
           :topK="topK"
-          :agenticMode="agenticMode"
+          :strategy="strategy"
+          :strategyUsed="strategyUsed"
           :enableWebSearch="enableWebSearch"
           :agenticStatus="agenticStatus"
           :agenticRounds="agenticRounds"
@@ -81,7 +83,7 @@ const emit = defineEmits<{
           :agenticSubQueries="agenticSubQueries"
           @update:input="(v: string) => emit('update:convInput', v)"
           @update:topK="(v: number) => emit('update:topK', v)"
-          @update:agenticMode="(v: boolean) => emit('update:agenticMode', v)"
+          @update:strategy="(v: RagStrategy) => emit('update:strategy', v)"
           @update:enableWebSearch="(v: boolean) => emit('update:enableWebSearch', v)"
           @ask="emit('convAsk')"
           @clear="emit('convClear')"

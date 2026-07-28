@@ -205,20 +205,6 @@ def create_app() -> FastAPI:
 
     app.include_router(conversations.router)
 
-    # Agentic RAG 端点（可通过 AGENTIC_ENABLED 环境变量关闭）
-    if settings.agentic_enabled:
-        try:
-            from .routers import agentic_qa
-
-            app.include_router(agentic_qa.router)
-            _logger.info("Agentic RAG endpoints enabled")
-        except ImportError as exc:
-            _logger.warning(
-                "Agentic RAG endpoints disabled — missing dependencies: %s. "
-                "Install with: pip install langgraph langchain-core openai duckduckgo-search",
-                exc,
-            )
-
     @app.get("/")
     def root() -> dict[str, str]:
         return {"message": "Knowledge Agent backend is running"}
@@ -276,4 +262,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

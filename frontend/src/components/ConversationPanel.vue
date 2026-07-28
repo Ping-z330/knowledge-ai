@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import {
   FileTextOutlined, SendOutlined, ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import type { ConversationMessage } from '../types'
+import type { ConversationMessage, RagStrategy } from '../types'
 import { renderAnswerWithCitations, handleCitationClick, highlightSourceCitation, clearSourceCitation, extractCitedIds } from '../utils/citations'
 import { api } from '../utils/api'
 
@@ -17,7 +17,8 @@ defineProps<{
   streamingAnswer: string
   messagesRef: HTMLElement | null
   topK: number
-  agenticMode: boolean
+  strategy: RagStrategy
+  strategyUsed: 'standard' | 'agentic' | ''
   enableWebSearch: boolean
   agenticStatus: string
   agenticRounds: number
@@ -28,7 +29,7 @@ defineProps<{
 const emit = defineEmits<{
   'update:input': [value: string]
   'update:topK': [value: number]
-  'update:agenticMode': [value: boolean]
+  'update:strategy': [value: RagStrategy]
   'update:enableWebSearch': [value: boolean]
   ask: []
   clear: []
@@ -117,15 +118,19 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
           <a-input-number :value="topK" :min="1" :max="20" size="small"
             @update:value="(v: number) => emit('update:topK', v)" />
           <a-divider type="vertical" />
-          <a-tooltip title="Agentic 模式：Agent 自主分析查询、评估检索质量、必要时改写重试">
-            <a-switch
-              :checked="agenticMode" checked-children="Agentic" un-checked-children="标准"
-              size="small"
-              @change="(v: boolean) => emit('update:agenticMode', v)"
-            />
-          </a-tooltip>
+          <span class="toolbar-label">策略</span>
+          <a-select
+            :value="strategy"
+            size="small"
+            style="width: 108px"
+            @update:value="(v: RagStrategy) => emit('update:strategy', v)"
+          >
+            <a-select-option value="auto">自动</a-select-option>
+            <a-select-option value="standard">标准</a-select-option>
+            <a-select-option value="agentic">Agentic</a-select-option>
+          </a-select>
           <a-checkbox
-            v-if="agenticMode"
+            v-if="strategy !== 'standard'"
             :checked="enableWebSearch"
             @change="(e: any) => emit('update:enableWebSearch', e.target.checked)"
           >
@@ -148,8 +153,11 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
         </a-button>
       </div>
 
-      <div v-if="agenticMode && asking && agenticStatus" class="agentic-status">
-        <a-tag color="processing"><ThunderboltOutlined /> {{ agenticStatus }}</a-tag>
+      <div v-if="asking && agenticStatus" class="agentic-status">
+        <a-tag color="processing">
+          <ThunderboltOutlined /> {{ agenticStatus }}
+          <template v-if="strategyUsed"> · {{ strategyUsed }}</template>
+        </a-tag>
         <span v-if="agenticRounds > 0" class="agentic-detail">
           {{ agenticRounds }} 轮检索 · 评分 {{ agenticScore ?? '?' }}/5
           <span v-if="agenticSubQueries.length"> · 子查询: {{ agenticSubQueries.join(' | ') }}</span>

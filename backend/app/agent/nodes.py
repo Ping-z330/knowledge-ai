@@ -5,11 +5,8 @@
 由 graph.py 中的包装函数注入。
 """
 
-import json
 import logging
 
-from ..services.answering import NO_CONTEXT_ANSWER, _system_prompt, _user_prompt
-from ..services.llm import OpenAICompatibleLLMProvider
 from ..services.llm_agent import AgentLLMError, ToolCallingLLMProvider
 from ..services.query_analysis import QueryAnalysisError, analyze_query_complexity
 from ..services.retrieval import RetrievalError, RetrievedChunk, retrieve_chunks
@@ -212,95 +209,6 @@ def web_search(state: AgenticState) -> dict:
         return {}
 
 
-def generate_answer(state: AgenticState) -> dict:
-    """基于累积的上下文生成最终答案。"""
-    if state.error:
-        _logger.info("  Step 5/5: 出错，返回错误信息")
-        return {
-            "final_answer": f"Agentic RAG 流程出错：{state.error}",
-            "sources_json": [],
-            "retrieval_rounds_used": state.retrieval_rounds,
-        }
-
-    _logger.info("  Step 5/5: 生成答案 (共 %d 个上下文片段)...", len(state.retrieved_chunks_json))
-    chunks = state.retrieved_chunks_json
-
-    # 合并 Web 搜索结果到上下文
-    web_contexts: list[str] = []
-    if state.web_search_results:
-        for idx, wr in enumerate(state.web_search_results):
-            web_contexts.append(
-                f"[web-{idx + 1}] (来源: {wr.get('title', 'Web')})\n{wr.get('snippet', '')}"
-            )
-
-    # 构建 sources（复用 answering.py 的 AnswerSource 结构）
-    from ..services.answering import AnswerSource
-
-    sources: list[dict] = []
-    for idx, chunk in enumerate(chunks):
-        sources.append({
-            "citation": idx + 1,
-            "vector_id": chunk.get("vector_id", ""),
-            "text": chunk.get("text", ""),
-            "score": chunk.get("score"),
-            "metadata": chunk.get("metadata", {}),
-        })
-
-    if not sources and not web_contexts:
-        return {
-            "final_answer": NO_CONTEXT_ANSWER,
-            "sources_json": [],
-            "retrieval_rounds_used": state.retrieval_rounds,
-        }
-
-    # 构建 prompt
-    context_blocks = "\n\n".join(
-        f"[{s['citation']}] {s['text']}" for s in sources
-    )
-    if web_contexts:
-        context_blocks += "\n\n--- Web Search Results ---\n" + "\n\n".join(web_contexts)
-
-    history = state.conversation_history
-    parts: list[str] = []
-    if history:
-        parts.append("Conversation history:")
-        for msg in history:
-            role_label = "User" if msg["role"] == "user" else "Assistant"
-            parts.append(f"{role_label}: {msg['content']}")
-        parts.append("")
-    parts.append(f"Question:\n{state.question}")
-    parts.append(f"Context:\n{context_blocks}")
-    parts.append(
-        "Answer in Chinese when the question is Chinese; otherwise answer in the "
-        "same language as the question. "
-        "MUST embed citation markers [1], [2] inline after each claim that uses a source."
-    )
-    user_prompt = "\n\n".join(parts)
-
-    try:
-        provider = OpenAICompatibleLLMProvider.from_settings()
-        answer = provider.answer(
-            system_prompt=_system_prompt(),
-            user_prompt=user_prompt,
-        )
-    except Exception as exc:
-        _logger.exception("Final answer generation failed")
-        return {
-            "final_answer": f"答案生成失败：{exc}",
-            "sources_json": sources,
-            "retrieval_rounds_used": state.retrieval_rounds,
-        }
-
-    # 如果所有轮次评估分都极低（<2），来源不相关，不展示
-    effective_sources = sources if state.context_score >= 2 else []
-
-    return {
-        "final_answer": answer,
-        "sources_json": effective_sources,
-        "retrieval_rounds_used": state.retrieval_rounds,
-    }
-
-
 # ── 辅助函数 ──────────────────────────────────────────────
 
 
@@ -312,66 +220,3 @@ def _chunk_to_dict(chunk: "RetrievedChunk") -> dict:
         "score": chunk.score,
         "metadata": chunk.metadata,
     }
-
-
-# ── 流式生成（用于 SSE 端点） ──────────────────────────────
-
-
-def generate_answer_stream(state: AgenticState):
-    """流式生成最终答案，逐 token yield str。"""
-    chunks = state.retrieved_chunks_json
-
-    web_contexts: list[str] = []
-    if state.web_search_results:
-        for idx, wr in enumerate(state.web_search_results):
-            web_contexts.append(
-                f"[web-{idx + 1}] (来源: {wr.get('title', 'Web')})\n{wr.get('snippet', '')}"
-            )
-
-    sources: list[dict] = []
-    for idx, chunk in enumerate(chunks):
-        sources.append({
-            "citation": idx + 1,
-            "vector_id": chunk.get("vector_id", ""),
-            "text": chunk.get("text", ""),
-            "score": chunk.get("score"),
-            "metadata": chunk.get("metadata", {}),
-        })
-
-    if not sources and not web_contexts:
-        yield NO_CONTEXT_ANSWER
-        return
-
-    context_blocks = "\n\n".join(
-        f"[{s['citation']}] {s['text']}" for s in sources
-    )
-    if web_contexts:
-        context_blocks += "\n\n--- Web Search Results ---\n" + "\n\n".join(web_contexts)
-
-    history = state.conversation_history
-    parts: list[str] = []
-    if history:
-        parts.append("Conversation history:")
-        for msg in history:
-            role_label = "User" if msg["role"] == "user" else "Assistant"
-            parts.append(f"{role_label}: {msg['content']}")
-        parts.append("")
-    parts.append(f"Question:\n{state.question}")
-    parts.append(f"Context:\n{context_blocks}")
-    parts.append(
-        "Answer in Chinese when the question is Chinese; otherwise answer in the "
-        "same language as the question. "
-        "MUST embed citation markers [1], [2] inline after each claim that uses a source."
-    )
-    user_prompt = "\n\n".join(parts)
-
-    try:
-        provider = OpenAICompatibleLLMProvider.from_settings()
-        for token in provider.stream_answer(
-            system_prompt=_system_prompt(),
-            user_prompt=user_prompt,
-        ):
-            yield token
-    except Exception as exc:
-        _logger.exception("Stream generation failed")
-        yield f"\n\n[生成中断：{exc}]"

@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Literal
 
 from .llm import LLMError, LLMProvider, OpenAICompatibleLLMProvider
 from .retrieval import RetrievedChunk, RetrievalError, retrieve_chunks
@@ -26,15 +27,29 @@ class AnswerResult:
     sources: list[AnswerSource]
 
 
-def answer_question(
+RagStrategy = Literal["auto", "standard", "agentic"]
+
+
+@dataclass(frozen=True)
+class PreparedAnswer:
+    """检索/规划阶段的统一输出；最终生成只消费这个结构。"""
+
+    question: str
+    conversation_history: list[dict]
+    sources: list[AnswerSource]
+    web_contexts: list[dict]
+    strategy_used: Literal["standard", "agentic"]
+    retrieval_trace: dict
+
+
+def prepare_standard_answer(
     *,
     knowledge_base_id: str,
     question: str,
     top_k: int = 5,
     conversation_history: list[dict] | None = None,
-    llm_provider: LLMProvider | None = None,
     retrieved_chunks: list[RetrievedChunk] | None = None,
-) -> AnswerResult:
+) -> PreparedAnswer:
     clean_question = question.strip()
     if not clean_question:
         raise AnsweringError("Question is required")
@@ -52,20 +67,71 @@ def answer_question(
     except RetrievalError as exc:
         raise AnsweringError(str(exc)) from exc
 
-    sources = [_to_source(index, chunk) for index, chunk in enumerate(chunks, start=1)]
-    if not sources:
+    return PreparedAnswer(
+        question=clean_question,
+        conversation_history=conversation_history or [],
+        sources=[_to_source(index, chunk) for index, chunk in enumerate(chunks, start=1)],
+        web_contexts=[],
+        strategy_used="standard",
+        retrieval_trace={"retrieval_rounds": 1, "context_score": None, "sub_queries": []},
+    )
+
+
+def answer_prepared(
+    prepared: PreparedAnswer,
+    *,
+    llm_provider: LLMProvider | None = None,
+) -> AnswerResult:
+    if not prepared.sources and not prepared.web_contexts:
         return AnswerResult(answer=NO_CONTEXT_ANSWER, sources=[])
 
     provider = llm_provider or OpenAICompatibleLLMProvider.from_settings()
     try:
         answer = provider.answer(
             system_prompt=_system_prompt(),
-            user_prompt=_user_prompt(clean_question, sources, conversation_history or []),
+            user_prompt=_prepared_user_prompt(prepared),
+        )
+    except LLMError as exc:
+        raise AnsweringError(str(exc)) from exc
+    return AnswerResult(answer=answer, sources=prepared.sources)
+
+
+def stream_prepared_answer(
+    prepared: PreparedAnswer,
+    *,
+    llm_provider: LLMProvider | None = None,
+) -> Iterator[str]:
+    if not prepared.sources and not prepared.web_contexts:
+        yield NO_CONTEXT_ANSWER
+        return
+
+    provider = llm_provider or OpenAICompatibleLLMProvider.from_settings()
+    try:
+        yield from provider.stream_answer(
+            system_prompt=_system_prompt(),
+            user_prompt=_prepared_user_prompt(prepared),
         )
     except LLMError as exc:
         raise AnsweringError(str(exc)) from exc
 
-    return AnswerResult(answer=answer, sources=sources)
+
+def answer_question(
+    *,
+    knowledge_base_id: str,
+    question: str,
+    top_k: int = 5,
+    conversation_history: list[dict] | None = None,
+    llm_provider: LLMProvider | None = None,
+    retrieved_chunks: list[RetrievedChunk] | None = None,
+) -> AnswerResult:
+    prepared = prepare_standard_answer(
+        knowledge_base_id=knowledge_base_id,
+        question=question,
+        top_k=top_k,
+        conversation_history=conversation_history,
+        retrieved_chunks=retrieved_chunks,
+    )
+    return answer_prepared(prepared, llm_provider=llm_provider)
 
 
 def answer_question_stream(
@@ -78,40 +144,14 @@ def answer_question_stream(
     retrieved_chunks: list[RetrievedChunk] | None = None,
 ) -> tuple[list[AnswerSource], Iterator[str]]:
     """流式问答：返回 (来源列表, token 迭代器)。"""
-    clean_question = question.strip()
-    if not clean_question:
-        raise AnsweringError("Question is required")
-
-    try:
-        chunks = (
-            retrieved_chunks
-            if retrieved_chunks is not None
-            else retrieve_chunks(
-                knowledge_base_id=knowledge_base_id,
-                query=clean_question,
-                top_k=top_k,
-            )
-        )
-    except RetrievalError as exc:
-        raise AnsweringError(str(exc)) from exc
-
-    sources = [_to_source(index, chunk) for index, chunk in enumerate(chunks, start=1)]
-    if not sources:
-        def _no_context_tokens() -> Iterator[str]:
-            yield NO_CONTEXT_ANSWER
-
-        return sources, _no_context_tokens()
-
-    provider = llm_provider or OpenAICompatibleLLMProvider.from_settings()
-    try:
-        tokens = provider.stream_answer(
-            system_prompt=_system_prompt(),
-            user_prompt=_user_prompt(clean_question, sources, conversation_history or []),
-        )
-    except LLMError as exc:
-        raise AnsweringError(str(exc)) from exc
-
-    return sources, tokens
+    prepared = prepare_standard_answer(
+        knowledge_base_id=knowledge_base_id,
+        question=question,
+        top_k=top_k,
+        conversation_history=conversation_history,
+        retrieved_chunks=retrieved_chunks,
+    )
+    return prepared.sources, stream_prepared_answer(prepared, llm_provider=llm_provider)
 
 
 def _to_source(citation: int, chunk: RetrievedChunk) -> AnswerSource:
@@ -164,3 +204,34 @@ def _user_prompt(
     )
     return "\n\n".join(parts)
 
+
+def _prepared_user_prompt(prepared: PreparedAnswer) -> str:
+    context_blocks = "\n\n".join(
+        f"[{source.citation}] {source.text}" for source in prepared.sources
+    )
+    if prepared.web_contexts:
+        web_blocks = []
+        for index, item in enumerate(prepared.web_contexts, start=1):
+            web_blocks.append(
+                f"[web-{index}] {item.get('title', 'Web')}\n"
+                f"URL: {item.get('url', '')}\n{item.get('snippet', '')}"
+            )
+        context_blocks += "\n\n--- Web Search Results ---\n" + "\n\n".join(web_blocks)
+
+    parts: list[str] = []
+    if prepared.conversation_history:
+        parts.append("Conversation history:")
+        for message in prepared.conversation_history:
+            role_label = "User" if message["role"] == "user" else "Assistant"
+            parts.append(f"{role_label}: {message['content']}")
+        parts.append("")
+    parts.append(f"Question:\n{prepared.question}")
+    parts.append(f"Context:\n{context_blocks}")
+    parts.append(
+        "Instructions:\n"
+        "- Answer in Chinese when the question is Chinese\n"
+        "- EMBED knowledge-base citation markers [1], [2] inline after supported claims\n"
+        "- Cite web evidence with [web-1], [web-2] when it is used\n"
+        "- Do NOT list all citations only at the end"
+    )
+    return "\n\n".join(parts)

@@ -3,10 +3,10 @@
 图结构：
     START → analyze_query → prepare_retrieval → retrieve
     → merge_and_dedup → evaluate_context → [条件路由]
-      ├── sufficient → generate_answer → END
+      ├── sufficient → END
       ├── next_sub_query → advance_sub_query → prepare_retrieval (循环)
       ├── retry → rewrite_query → prepare_retrieval (循环)
-      └── web_fallback → web_search → generate_answer → END
+      └── web_fallback → web_search → END
 """
 
 import logging
@@ -17,7 +17,6 @@ from .nodes import (
     advance_sub_query,
     analyze_query,
     evaluate_context,
-    generate_answer,
     merge_and_dedup,
     prepare_retrieval,
     retrieve,
@@ -54,8 +53,8 @@ def _route_after_evaluate(state: AgenticState) -> str:
     return "sufficient"
 
 
-def build_agentic_graph() -> StateGraph:
-    """构建编译后的 LangGraph StateGraph。"""
+def build_agentic_graph(*, skip_analysis: bool = False) -> StateGraph:
+    """构建只负责准备上下文的 LangGraph StateGraph。"""
     graph = StateGraph(AgenticState)
 
     # 注册节点
@@ -67,10 +66,7 @@ def build_agentic_graph() -> StateGraph:
     graph.add_node("rewrite_query", rewrite_query)
     graph.add_node("advance_sub_query", advance_sub_query)
     graph.add_node("web_search", web_search)
-    graph.add_node("generate_answer", generate_answer)
-
-    # 设置入口
-    graph.set_entry_point("analyze_query")
+    graph.set_entry_point("prepare_retrieval" if skip_analysis else "analyze_query")
 
     # 线性流程
     graph.add_edge("analyze_query", "prepare_retrieval")
@@ -83,7 +79,7 @@ def build_agentic_graph() -> StateGraph:
         "evaluate_context",
         _route_after_evaluate,
         {
-            "sufficient": "generate_answer",
+            "sufficient": END,
             "retry": "rewrite_query",
             "next_sub_query": "advance_sub_query",
             "web_fallback": "web_search",
@@ -94,16 +90,82 @@ def build_agentic_graph() -> StateGraph:
     graph.add_edge("rewrite_query", "prepare_retrieval")
     graph.add_edge("advance_sub_query", "prepare_retrieval")
 
-    # Web 搜索 → 生成答案
-    graph.add_edge("web_search", "generate_answer")
-
-    # 终止
-    graph.add_edge("generate_answer", END)
+    graph.add_edge("web_search", END)
 
     return graph.compile()
 
 
 # ── 便捷运行函数 ──────────────────────────────────────────
+
+
+def prepare_agentic_answer(
+    *,
+    kb_id: str,
+    question: str,
+    top_k: int = 5,
+    conversation_history: list[dict] | None = None,
+    max_retrieval_rounds: int = 3,
+    enable_web_search: bool = False,
+    initial_is_complex: bool | None = None,
+    initial_sub_queries: list[str] | None = None,
+):
+    """运行 Agentic 准备流程，返回统一 PreparedAnswer，不生成最终答案。"""
+    from ..services.answering import AnswerSource, PreparedAnswer
+
+    _logger.info("========== Agentic RAG 开始 ==========")
+    _logger.info("问题: %s", question)
+    _logger.info("配置: top_k=%d, max_rounds=%d, web_search=%s", top_k, max_retrieval_rounds, enable_web_search)
+
+    graph = build_agentic_graph(skip_analysis=initial_is_complex is not None)
+
+    initial_state = AgenticState(
+        kb_id=kb_id,
+        question=question.strip(),
+        conversation_history=conversation_history or [],
+        top_k=top_k,
+        max_rounds=max_retrieval_rounds,
+        enable_web_search=enable_web_search,
+        is_complex=initial_is_complex or False,
+        sub_queries=initial_sub_queries or [],
+    )
+
+    final_state = graph.invoke(initial_state)
+
+    chunks = final_state.get("retrieved_chunks_json", [])
+    sources = [
+        AnswerSource(
+            citation=index,
+            vector_id=chunk.get("vector_id", ""),
+            text=chunk.get("text", ""),
+            score=chunk.get("score"),
+            metadata=chunk.get("metadata", {}),
+        )
+        for index, chunk in enumerate(chunks, start=1)
+    ]
+    if final_state.get("context_score", 0) < 2:
+        sources = []
+
+    trace = {
+        "retrieval_rounds": final_state.get("retrieval_rounds", 0),
+        "context_score": final_state.get("context_score"),
+        "sub_queries": final_state.get("sub_queries", []),
+        "web_search_used": final_state.get("web_search_used", False),
+    }
+    _logger.info("========== Agentic RAG 准备结束 ==========")
+    _logger.info("结果: %d 轮检索, 评分 %d/5, %d 个来源, web=%s",
+                 trace["retrieval_rounds"],
+                 trace["context_score"] or 0,
+                 len(sources),
+                 final_state.get("web_search_used", False))
+
+    return PreparedAnswer(
+        question=question.strip(),
+        conversation_history=conversation_history or [],
+        sources=sources,
+        web_contexts=final_state.get("web_search_results", []),
+        strategy_used="agentic",
+        retrieval_trace=trace,
+    )
 
 
 def run_agentic_qa(
@@ -115,37 +177,34 @@ def run_agentic_qa(
     max_retrieval_rounds: int = 3,
     enable_web_search: bool = False,
 ) -> dict:
-    """运行 Agentic RAG 流程，返回包含 answer / sources / metadata 的 dict。"""
-    _logger.info("========== Agentic RAG 开始 ==========")
-    _logger.info("问题: %s", question)
-    _logger.info("配置: top_k=%d, max_rounds=%d, web_search=%s", top_k, max_retrieval_rounds, enable_web_search)
+    """兼容评测脚本的非路由包装；复用统一准备与生成 Module。"""
+    from ..services.answering import answer_prepared
 
-    graph = build_agentic_graph()
-
-    initial_state = AgenticState(
+    prepared = prepare_agentic_answer(
         kb_id=kb_id,
-        question=question.strip(),
-        conversation_history=conversation_history or [],
+        question=question,
         top_k=top_k,
-        max_rounds=max_retrieval_rounds,
+        conversation_history=conversation_history,
+        max_retrieval_rounds=max_retrieval_rounds,
         enable_web_search=enable_web_search,
     )
-
-    final_state = graph.invoke(initial_state)
-
-    _logger.info("========== Agentic RAG 结束 ==========")
-    _logger.info("结果: %d 轮检索, 评分 %d/5, %d 个来源, web=%s",
-                 final_state.get("retrieval_rounds_used", 0),
-                 final_state.get("context_score", 0),
-                 len(final_state.get("sources_json", [])),
-                 final_state.get("web_search_used", False))
-
+    result = answer_prepared(prepared)
+    trace = prepared.retrieval_trace
     return {
-        "answer": final_state.get("final_answer", ""),
-        "sources": final_state.get("sources_json", []),
-        "retrieval_rounds_used": final_state.get("retrieval_rounds_used", 0),
-        "context_score": final_state.get("context_score"),
-        "web_search_used": final_state.get("web_search_used", False),
-        "sub_queries_used": final_state.get("sub_queries", []),
-        "error": final_state.get("error", ""),
+        "answer": result.answer,
+        "sources": [
+            {
+                "citation": source.citation,
+                "vector_id": source.vector_id,
+                "text": source.text,
+                "score": source.score,
+                "metadata": source.metadata,
+            }
+            for source in result.sources
+        ],
+        "retrieval_rounds_used": trace["retrieval_rounds"],
+        "context_score": trace["context_score"],
+        "web_search_used": trace["web_search_used"],
+        "sub_queries_used": trace["sub_queries"],
+        "error": "",
     }

@@ -1,7 +1,7 @@
 # Knowledge Agent — 项目展示
 
 > 企业 RAG 知识库问答系统 · Vue 3 + FastAPI + LangGraph  
-> 支持传统 RAG 与 Agentic 自主检索双模式，完整链路可部署
+> 统一流式入口自动选择标准 RAG 或 Agentic 自主检索，完整链路可部署
 
 ---
 
@@ -9,7 +9,7 @@
 
 Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文档 → 自动解析索引 → 自然语言提问 → AI 从知识库中检索并回答，支持引用追溯和质量反馈。
 
-**代码量** ~11,300 行 · **测试** 74 单元 + 6 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
+**代码量** ~11,300 行 · **测试** 78 单元 + 6 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
 
 ---
 
@@ -31,7 +31,7 @@ Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文�
 - LLM 分析查询复杂度，复杂问题自动拆子问题
 - 检索质量评估（1-5 分），不足时改写查询重试（最多 3 轮）
 - DuckDuckGo Web 搜索回退
-- LangGraph 9 节点状态图，全程可观测
+- LangGraph 8 节点上下文准备图，最终答案只流式生成一次
 - RAGAS 评测：context_recall 比传统模式提升 10%
 
 ### 对话管理

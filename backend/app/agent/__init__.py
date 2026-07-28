@@ -6,7 +6,12 @@
 - run_agentic_qa: 便捷函数，运行 Agentic RAG 流程
 """
 
-from .graph import build_agentic_graph, run_agentic_qa
+from .graph import build_agentic_graph, prepare_agentic_answer, run_agentic_qa
 from .state import AgenticState
 
-__all__ = ["build_agentic_graph", "run_agentic_qa", "AgenticState"]
+__all__ = [
+    "build_agentic_graph",
+    "prepare_agentic_answer",
+    "run_agentic_qa",
+    "AgenticState",
+]

@@ -1,5 +1,5 @@
 import { nextTick, ref, watch, type Ref } from 'vue'
-import type { Conversation, ConversationMessage } from '../types'
+import type { Conversation, ConversationMessage, RagStrategy } from '../types'
 import { api } from '../utils/api'
 import { useQA } from './useQA'
 
@@ -10,13 +10,13 @@ export function useConversation(
   selectedKnowledgeBaseId: Ref<string>,
   indexedCount: Ref<number>,
   topK: Ref<number>,
-  agenticMode: Ref<boolean>,
+  strategy: Ref<RagStrategy>,
   enableWebSearch: Ref<boolean>,
 ) {
   const qa = useQA(selectedKnowledgeBaseId, indexedCount)
 
   watch(topK, (v) => { qa.topK.value = v }, { immediate: true })
-  watch(agenticMode, (v) => { qa.agenticMode.value = v }, { immediate: true })
+  watch(strategy, (v) => { qa.strategy.value = v }, { immediate: true })
   watch(enableWebSearch, (v) => { qa.enableWebSearch.value = v }, { immediate: true })
 
   const conversation = ref<ConversationMessage[]>([])
@@ -131,11 +131,7 @@ export function useConversation(
     qa.question.value = question
     const history = buildHistory()
     const convId = conversationId.value
-    if (agenticMode.value) {
-      await qa.askAgentic(history, convId)
-    } else {
-      await qa.askQuestion(history, convId)
-    }
+    await qa.askQuestion(history, convId)
 
     // 更新当前对话的标题（用第一个问题）
     const answerText = qa.streamingAnswer.value || qa.answer.value?.answer || ''
@@ -179,6 +175,7 @@ export function useConversation(
   return {
     conversation, input, messagesRef,
     asking: qa.asking, streaming: qa.streaming, streamingAnswer: qa.streamingAnswer,
+    strategyUsed: qa.strategyUsed,
     agenticStatus: qa.agenticStatus, agenticRounds: qa.agenticRounds,
     agenticScore: qa.agenticScore, agenticSubQueries: qa.agenticSubQueries,
     conversationId, conversations, loadingConversations,

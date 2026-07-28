@@ -1,4 +1,6 @@
-from typing import Generic, TypeVar
+from typing import Generic, Literal, TypeVar
+
+# 数据模型定义
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,18 +13,18 @@ class PaginatedResponse(BaseModel, Generic[T]):
     limit: int
     offset: int
 
-
+# 创建
 class KnowledgeBaseCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=1000)
 
-
+# 更新
 class KnowledgeBaseUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     description: str | None = Field(default=None, max_length=1000)
 
 
-# 
+# 读取
 class KnowledgeBaseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,6 +102,9 @@ class QuestionRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
     conversation_id: str = ""
+    strategy: Literal["auto", "standard", "agentic"] = "auto"
+    max_retrieval_rounds: int = Field(default=3, ge=1, le=5)
+    enable_web_search: bool = False
 
 
 class AnswerSourceRead(BaseModel):
@@ -132,22 +137,3 @@ class QuestionAnswerRead(BaseModel):
 
 class RatingUpdate(BaseModel):
     rating: int = Field(ge=-1, le=1)
-
-
-class AgenticQuestionRequest(BaseModel):
-    question: str = Field(min_length=1, max_length=2000)
-    top_k: int = Field(default=5, ge=1, le=20)
-    conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
-    max_retrieval_rounds: int = Field(default=3, ge=1, le=5)
-    enable_web_search: bool = False
-    conversation_id: str = ""
-
-
-class AgenticQuestionResponse(BaseModel):
-    question: str
-    answer: str
-    sources: list[AnswerSourceRead]
-    retrieval_rounds_used: int
-    context_score: int | None
-    web_search_used: bool
-    sub_queries_used: list[str]

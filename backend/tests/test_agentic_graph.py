@@ -332,18 +332,9 @@ class AgenticGraphTest(unittest.TestCase):
             )
             llm_module.OpenAICompatibleLLMProvider.from_settings = original_ans_from_settings
 
-    def test_graph_error_handling(self) -> None:
-        """测试图在出错时的降级行为。"""
-        from app.agent.state import AgenticState
-        from app.agent.nodes import generate_answer
+    def test_agentic_graph_only_prepares_context(self) -> None:
+        """Agent 图不再包含最终答案生成节点。"""
+        from app.agent.graph import build_agentic_graph
 
-        state = AgenticState(
-            kb_id="kb-1",
-            question="测试问题",
-            error="Something went wrong during retrieval",
-        )
-
-        update = generate_answer(state)
-        state = state.model_copy(update=update)
-        self.assertIn("出错", state.final_answer)
-        self.assertEqual(state.retrieval_rounds_used, 0)
+        graph = build_agentic_graph()
+        self.assertNotIn("generate_answer", graph.get_graph().nodes)
