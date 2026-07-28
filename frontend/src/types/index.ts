@@ -88,6 +88,16 @@ export type BatchTaskResponse = {
 
 export type RagStrategy = 'auto' | 'standard' | 'agentic'
 
+export type SubQueryTrace = {
+  sub_query: string
+  queries_tried: string[]
+  retrieval_calls: number
+  final_score: number
+  completion_reason: string
+  chunk_count: number
+  evaluation_skipped: boolean
+}
+
 export type DocumentStatusTone = 'default' | 'processing' | 'success' | 'error'
 
 export type DocumentStatusMeta = {

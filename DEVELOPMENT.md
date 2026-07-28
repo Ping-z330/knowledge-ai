@@ -78,7 +78,7 @@ flowchart LR
 
 ### Agentic RAG
 - **查询分析**：LLM 判断查询复杂度，复杂问题自动拆分为原子性子问题
-- **自纠正检索**：LLM 评估检索质量（1-5 分），评分不足时自动改写查询重试，最多 3 轮
+- **自纠正检索**：每个子问题独立评估与改写（最多 3 轮），整个请求最多 8 次知识库检索
 - **Web 搜索回退**：知识库检索耗尽后，可选启用 DuckDuckGo 外部搜索补充上下文
 - **LangGraph 状态图**：8 个上下文准备节点、4 条路由分支，最终答案统一流式生成一次
 - **自动策略**：简单问题使用标准检索，复杂问题进入 Agentic 流程；调试时可强制指定策略
@@ -101,7 +101,7 @@ flowchart LR
 - CORS 可配置（`CORS_ORIGINS` 环境变量）
 - Docker Compose 一键部署
 - CI：GitHub Actions 自动测试 + 类型检查 + 构建
-- 后端 74 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图等）
+- 后端 85 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、检索预算等）
 - 设计决策文档（`docs/decisions.md`）+ 设计规范文档（`DESIGN.md`）
 - RAGAS 对比评测结果（传统 vs Agentic）
 
@@ -157,7 +157,7 @@ flowchart LR
 │   │   ├── schemas.py        # Pydantic 请求/响应模型（含 Agentic 类型）
 │   │   ├── logging_config.py # 结构化日志（JSON / 文本 + request_id）
 │   │   └── main.py           # FastAPI app（CORS、X-Request-ID、上传限制、健康检查、启动恢复）
-│   ├── tests/                # 74 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图等）
+│   ├── tests/                # 85 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图等）
 │   ├── eval/                 # 检索质量评估 + RAGAS 对比脚本
 │   ├── data/                 # 本地数据库、上传文件、Chroma 数据
 │   └── requirements.txt
@@ -508,13 +508,13 @@ cd backend && .venv/bin/python eval/generate_eval_dataset.py
 
 | Job | 内容 |
 |-----|------|
-| backend | Python 3.12 + pip install + 74 个单元测试 |
+| backend | Python 3.12 + pip install + 85 个单元测试 |
 | frontend | Node 20 + npm ci + vue-tsc 类型检查 + vite build |
 | e2e | Playwright Chromium 冒烟测试（创建知识库 → 问答页 → 文档管理 → 响应式） |
 
 ## 测试
 
-**后端 74 个单元测试：**
+**后端 85 个单元测试：**
 
 ```bash
 cd backend && .venv/bin/python -m unittest discover tests

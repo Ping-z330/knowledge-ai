@@ -9,7 +9,7 @@
 
 Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文档 → 自动解析索引 → 自然语言提问 → AI 从知识库中检索并回答，支持引用追溯和质量反馈。
 
-**代码量** ~11,300 行 · **测试** 78 单元 + 6 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
+**代码量** ~11,300 行 · **测试** 85 单元 + 6 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
 
 ---
 
@@ -29,7 +29,7 @@ Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文�
 
 ### Agentic RAG（自主检索）
 - LLM 分析查询复杂度，复杂问题自动拆子问题
-- 检索质量评估（1-5 分），不足时改写查询重试（最多 3 轮）
+- 每个子问题独立评估与改写（最多 3 轮），整个请求最多 8 次知识库检索
 - DuckDuckGo Web 搜索回退
 - LangGraph 8 节点上下文准备图，最终答案只流式生成一次
 - RAGAS 评测：context_recall 比传统模式提升 10%
@@ -44,7 +44,7 @@ Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文�
 - BM25 索引持久化 + Embedding 缓存
 - 结构化日志 + X-Request-ID 全链路追踪
 - 健康检查覆盖数据库 / ChromaDB / LLM
-- CI：74 单元测试 + 6 e2e 冒烟测试 + 类型检查
+- CI：85 单元测试 + 6 e2e 冒烟测试 + 类型检查
 - Docker Compose 一键部署
 ---
 

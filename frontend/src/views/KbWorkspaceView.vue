@@ -84,6 +84,7 @@ onUnmounted(() => docs.stopPolling())
     :agenticRounds="conv.agenticRounds.value"
     :agenticScore="conv.agenticScore.value"
     :agenticSubQueries="conv.agenticSubQueries.value"
+    :agenticSubQueryTraces="conv.agenticSubQueryTraces.value"
     :conversations="conv.conversations.value"
     :conversationId="conv.conversationId.value"
     :loadingConversations="conv.loadingConversations.value"

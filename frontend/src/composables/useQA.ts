@@ -1,5 +1,5 @@
 import { computed, ref, type Ref } from 'vue'
-import type { AnswerSource, QuestionAnswer, QuestionResponse, RagStrategy, RetrievalResult } from '../types'
+import type { AnswerSource, QuestionAnswer, QuestionResponse, RagStrategy, RetrievalResult, SubQueryTrace } from '../types'
 import { api, extractApiError } from '../utils/api'
 import { streamSSE } from '../utils/sse'
 
@@ -26,6 +26,7 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
   const agenticRounds = ref(0)
   const agenticScore = ref<number | null>(null)
   const agenticSubQueries = ref<string[]>([])
+  const agenticSubQueryTraces = ref<SubQueryTrace[]>([])
   const enableWebSearch = ref(false)
 
   const qaPage = ref(1)
@@ -115,6 +116,7 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
     agenticRounds.value = 0
     agenticScore.value = null
     agenticSubQueries.value = []
+    agenticSubQueryTraces.value = []
     strategyUsed.value = ''
     try {
       const token: string | undefined = import.meta.env.VITE_API_TOKEN
@@ -140,6 +142,7 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
           agenticRounds.value = (event.retrieval_rounds as number) ?? 0
           agenticScore.value = (event.context_score as number) ?? null
           agenticSubQueries.value = (event.sub_queries as string[]) ?? []
+          agenticSubQueryTraces.value = (event.sub_query_traces as SubQueryTrace[]) ?? []
           if (event.fallback_from) agenticStatus.value = 'Agentic 失败，已降级为标准检索'
         } else if (event.type === 'sources') {
           retrievalResults.value = (event.sources as AnswerSource[]).map((s) => ({
@@ -235,7 +238,8 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
     loadingHistory, busyAnswerId, qaActiveTab, qaPage, qaPageSize, qaTotal,
     citedVectorIds, currentAnswerRating, retrievalCitationStats,
     retrievalQuery, retrievalSummary,
-    strategy, strategyUsed, agenticStatus, agenticRounds, agenticScore, agenticSubQueries, enableWebSearch,
+    strategy, strategyUsed, agenticStatus, agenticRounds, agenticScore,
+    agenticSubQueries, agenticSubQueryTraces, enableWebSearch,
     loadHistory, retrieveOnly, askQuestion, submitRating,
     selectHistoryItem, deleteHistoryItem, goQaPage,
   }

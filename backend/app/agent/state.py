@@ -1,10 +1,12 @@
 """Agentic RAG 的状态定义。"""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgenticState(BaseModel):
     """LangGraph 中流转的 Agent 状态。"""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     # ---- 输入 ----
     kb_id: str = ""
@@ -12,6 +14,7 @@ class AgenticState(BaseModel):
     conversation_history: list[dict] = Field(default_factory=list)
     top_k: int = 5
     max_rounds: int = 3
+    max_total_retrieval_calls: int = 8
     enable_web_search: bool = False
 
     # ---- 查询分析 ----
@@ -22,9 +25,17 @@ class AgenticState(BaseModel):
     # ---- 检索累积 ----
     retrieved_chunks_json: list[dict] = Field(default_factory=list)
     seen_chunk_ids: set[str] = Field(default_factory=set)
-    retrieval_rounds: int = 0
+    retrieval_rounds: int = 0  # 兼容字段：整个请求的检索调用次数
+    total_retrieval_calls: int = 0
+    current_sub_query_rounds: int = 0
+    current_sub_query_chunks: list[dict] = Field(default_factory=list)
+    queries_tried: list[str] = Field(default_factory=list)
+    sub_query_traces: list[dict] = Field(default_factory=list)
     current_query: str = ""
     pending_new_chunks: list[dict] = Field(default_factory=list, exclude=True)
+    last_retrieval_failed: bool = False
+    rewrite_failed: bool = False
+    evaluation_skipped: bool = False
 
     # ---- 评估 ----
     context_score: int = 0  # 1-5
@@ -39,6 +50,3 @@ class AgenticState(BaseModel):
     sources_json: list[dict] = Field(default_factory=list)
     retrieval_rounds_used: int = 0
     error: str = ""
-
-    class Config:
-        arbitrary_types_allowed = True

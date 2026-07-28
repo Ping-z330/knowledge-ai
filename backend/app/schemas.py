@@ -103,7 +103,7 @@ class QuestionRequest(BaseModel):
     conversation_history: list[ConversationMessage] = Field(default_factory=list, max_length=20)
     conversation_id: str = ""
     strategy: Literal["auto", "standard", "agentic"] = "auto"
-    max_retrieval_rounds: int = Field(default=3, ge=1, le=5)
+    max_retrieval_rounds: int = Field(default=3, ge=1, le=3)
     enable_web_search: bool = False
 
 

@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import {
   FileTextOutlined, SendOutlined, ThunderboltOutlined,
 } from '@ant-design/icons-vue'
-import type { ConversationMessage, RagStrategy } from '../types'
+import type { ConversationMessage, RagStrategy, SubQueryTrace } from '../types'
 import { renderAnswerWithCitations, handleCitationClick, highlightSourceCitation, clearSourceCitation, extractCitedIds } from '../utils/citations'
 import { api } from '../utils/api'
 
@@ -24,6 +24,7 @@ defineProps<{
   agenticRounds: number
   agenticScore: number | null
   agenticSubQueries: string[]
+  agenticSubQueryTraces: SubQueryTrace[]
 }>()
 
 const emit = defineEmits<{
@@ -162,6 +163,11 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
           {{ agenticRounds }} 轮检索 · 评分 {{ agenticScore ?? '?' }}/5
           <span v-if="agenticSubQueries.length"> · 子查询: {{ agenticSubQueries.join(' | ') }}</span>
         </span>
+        <div v-if="agenticSubQueryTraces.length" class="agentic-traces">
+          <span v-for="item in agenticSubQueryTraces" :key="item.sub_query">
+            {{ item.sub_query }}：{{ item.retrieval_calls }} 次 / {{ item.final_score }} 分 / {{ item.completion_reason }}
+          </span>
+        </div>
       </div>
     </div>
   </div>
@@ -214,5 +220,13 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
   margin-top: 6px;
   max-height: 320px;
   overflow-y: auto;
+}
+.agentic-traces {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #65726c;
 }
 </style>

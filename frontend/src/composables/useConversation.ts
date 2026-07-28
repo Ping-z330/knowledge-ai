@@ -178,6 +178,7 @@ export function useConversation(
     strategyUsed: qa.strategyUsed,
     agenticStatus: qa.agenticStatus, agenticRounds: qa.agenticRounds,
     agenticScore: qa.agenticScore, agenticSubQueries: qa.agenticSubQueries,
+    agenticSubQueryTraces: qa.agenticSubQueryTraces,
     conversationId, conversations, loadingConversations,
     loadConversations, loadConversation,
     ask, clear, updateLocalRating,

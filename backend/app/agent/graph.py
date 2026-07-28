@@ -2,11 +2,12 @@
 
 图结构：
     START → analyze_query → prepare_retrieval → retrieve
-    → merge_and_dedup → evaluate_context → [条件路由]
-      ├── sufficient → END
-      ├── next_sub_query → advance_sub_query → prepare_retrieval (循环)
-      ├── retry → rewrite_query → prepare_retrieval (循环)
-      └── web_fallback → web_search → END
+    → merge_and_dedup → evaluate_context
+      ├── retry → rewrite_query → prepare_retrieval (循环当前子问题)
+      └── complete → complete_sub_query
+            ├── next → prepare_retrieval (进入下一子问题)
+            ├── web_fallback → web_search → END
+            └── END
 """
 
 import logging
@@ -14,8 +15,8 @@ import logging
 from langgraph.graph import END, StateGraph
 
 from .nodes import (
-    advance_sub_query,
     analyze_query,
+    complete_sub_query,
     evaluate_context,
     merge_and_dedup,
     prepare_retrieval,
@@ -29,28 +30,43 @@ _logger = logging.getLogger(__name__)
 
 
 def _route_after_evaluate(state: AgenticState) -> str:
-    """条件路由：根据评估分数和状态决定下一步。"""
+    """决定重试当前子问题，或完成当前子问题。"""
     if state.error:
-        return "sufficient"
-
-    if state.is_complex and state.current_sub_query_idx + 1 < len(state.sub_queries):
-        _logger.info("    -> 下一个子问题 (%d/%d)", state.current_sub_query_idx + 2, len(state.sub_queries))
-        return "next_sub_query"
+        return "complete"
 
     if state.context_score >= 3:
-        _logger.info("    -> 评分 %d/5 够用，直接生成答案", state.context_score)
-        return "sufficient"
+        _logger.info("    -> 当前子问题评分 %d/5，完成", state.context_score)
+        return "complete"
 
-    if state.retrieval_rounds < state.max_rounds:
-        _logger.info("    -> 评分 %d/5 不够，改写重试 (%d/%d 轮)", state.context_score, state.retrieval_rounds, state.max_rounds)
-        return "retry"
+    if state.total_retrieval_calls >= state.max_total_retrieval_calls:
+        _logger.info("    -> 全局检索预算 %d 次已耗尽", state.max_total_retrieval_calls)
+        return "complete"
 
-    if state.enable_web_search:
-        _logger.info("    -> %d 轮已用完，启用 Web 搜索回退", state.max_rounds)
+    if state.current_sub_query_rounds >= state.max_rounds:
+        _logger.info("    -> 当前子问题 %d 轮预算已耗尽", state.max_rounds)
+        return "complete"
+
+    return "retry"
+
+
+def _route_after_rewrite(state: AgenticState) -> str:
+    return "complete" if state.rewrite_failed else "retry"
+
+
+def _route_after_complete(state: AgenticState) -> str:
+    sub_query_count = len(state.sub_queries) if state.is_complex else 1
+    if (
+        state.current_sub_query_idx < sub_query_count
+        and state.total_retrieval_calls < state.max_total_retrieval_calls
+    ):
+        return "next"
+
+    has_insufficient = any(
+        trace.get("final_score", 0) < 3 for trace in state.sub_query_traces
+    )
+    if has_insufficient and state.enable_web_search:
         return "web_fallback"
-
-    _logger.info("    -> %d 轮已用完，兜底生成答案 (score=%d/5)", state.max_rounds, state.context_score)
-    return "sufficient"
+    return "done"
 
 
 def build_agentic_graph(*, skip_analysis: bool = False) -> StateGraph:
@@ -64,7 +80,7 @@ def build_agentic_graph(*, skip_analysis: bool = False) -> StateGraph:
     graph.add_node("merge_and_dedup", merge_and_dedup)
     graph.add_node("evaluate_context", evaluate_context)
     graph.add_node("rewrite_query", rewrite_query)
-    graph.add_node("advance_sub_query", advance_sub_query)
+    graph.add_node("complete_sub_query", complete_sub_query)
     graph.add_node("web_search", web_search)
     graph.set_entry_point("prepare_retrieval" if skip_analysis else "analyze_query")
 
@@ -79,16 +95,28 @@ def build_agentic_graph(*, skip_analysis: bool = False) -> StateGraph:
         "evaluate_context",
         _route_after_evaluate,
         {
-            "sufficient": END,
             "retry": "rewrite_query",
-            "next_sub_query": "advance_sub_query",
-            "web_fallback": "web_search",
+            "complete": "complete_sub_query",
         },
     )
 
-    # 循环边
-    graph.add_edge("rewrite_query", "prepare_retrieval")
-    graph.add_edge("advance_sub_query", "prepare_retrieval")
+    graph.add_conditional_edges(
+        "rewrite_query",
+        _route_after_rewrite,
+        {
+            "retry": "prepare_retrieval",
+            "complete": "complete_sub_query",
+        },
+    )
+    graph.add_conditional_edges(
+        "complete_sub_query",
+        _route_after_complete,
+        {
+            "next": "prepare_retrieval",
+            "web_fallback": "web_search",
+            "done": END,
+        },
+    )
 
     graph.add_edge("web_search", END)
 
@@ -123,7 +151,8 @@ def prepare_agentic_answer(
         question=question.strip(),
         conversation_history=conversation_history or [],
         top_k=top_k,
-        max_rounds=max_retrieval_rounds,
+        max_rounds=min(max(max_retrieval_rounds, 1), 3),
+        max_total_retrieval_calls=8,
         enable_web_search=enable_web_search,
         is_complex=initial_is_complex or False,
         sub_queries=initial_sub_queries or [],
@@ -142,13 +171,20 @@ def prepare_agentic_answer(
         )
         for index, chunk in enumerate(chunks, start=1)
     ]
-    if final_state.get("context_score", 0) < 2:
+    sub_query_traces = final_state.get("sub_query_traces", [])
+    best_score = max(
+        (trace.get("final_score", 0) for trace in sub_query_traces),
+        default=0,
+    )
+    if best_score < 2 and not final_state.get("web_search_results"):
         sources = []
 
     trace = {
-        "retrieval_rounds": final_state.get("retrieval_rounds", 0),
-        "context_score": final_state.get("context_score"),
+        "retrieval_rounds": final_state.get("total_retrieval_calls", 0),
+        "total_retrieval_calls": final_state.get("total_retrieval_calls", 0),
+        "context_score": best_score,
         "sub_queries": final_state.get("sub_queries", []),
+        "sub_query_traces": sub_query_traces,
         "web_search_used": final_state.get("web_search_used", False),
     }
     _logger.info("========== Agentic RAG 准备结束 ==========")

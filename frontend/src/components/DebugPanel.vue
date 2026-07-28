@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { defineAsyncComponent } from 'vue'
 import { CheckCircleOutlined } from '@ant-design/icons-vue'
-import type { Conversation, ConversationMessage, RagStrategy } from '../types'
+import type { Conversation, ConversationMessage, RagStrategy, SubQueryTrace } from '../types'
 
 const HistoryPanel = defineAsyncComponent(() => import('./HistoryPanel.vue'))
 const ConversationPanel = defineAsyncComponent(() => import('./ConversationPanel.vue'))
@@ -26,6 +26,7 @@ defineProps<{
   agenticRounds: number
   agenticScore: number | null
   agenticSubQueries: string[]
+  agenticSubQueryTraces: SubQueryTrace[]
   conversations: Conversation[]
   conversationId: string
   loadingConversations: boolean
@@ -81,6 +82,7 @@ const emit = defineEmits<{
           :agenticRounds="agenticRounds"
           :agenticScore="agenticScore"
           :agenticSubQueries="agenticSubQueries"
+          :agenticSubQueryTraces="agenticSubQueryTraces"
           @update:input="(v: string) => emit('update:convInput', v)"
           @update:topK="(v: number) => emit('update:topK', v)"
           @update:strategy="(v: RagStrategy) => emit('update:strategy', v)"

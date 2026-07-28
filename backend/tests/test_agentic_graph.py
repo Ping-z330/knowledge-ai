@@ -213,10 +213,10 @@ class AgenticGraphTest(unittest.TestCase):
         finally:
             app.services.llm_agent.ToolCallingLLMProvider.from_settings = original_from_settings
 
-    def test_advance_sub_query_increments_index(self) -> None:
-        """测试子问题推进节点。"""
+    def test_complete_sub_query_records_trace_and_resets_local_state(self) -> None:
+        """完成子问题后保留全局状态并清理局部状态。"""
         from app.agent.state import AgenticState
-        from app.agent.nodes import advance_sub_query
+        from app.agent.nodes import complete_sub_query
 
         state = AgenticState(
             kb_id="kb-1",
@@ -224,13 +224,22 @@ class AgenticGraphTest(unittest.TestCase):
             is_complex=True,
             sub_queries=["Q1", "Q2"],
             current_sub_query_idx=0,
-            retrieval_rounds=3,
+            current_query="Q1 rewritten",
+            current_sub_query_rounds=2,
+            total_retrieval_calls=2,
+            current_sub_query_chunks=[{"vector_id": "chunk:1"}],
+            queries_tried=["Q1", "Q1 rewritten"],
+            context_score=4,
         )
 
-        update = advance_sub_query(state)
+        update = complete_sub_query(state)
         state = state.model_copy(update=update)
         self.assertEqual(state.current_sub_query_idx, 1)
-        self.assertEqual(state.retrieval_rounds, 0)
+        self.assertEqual(state.current_sub_query_rounds, 0)
+        self.assertEqual(state.total_retrieval_calls, 2)
+        self.assertEqual(state.current_sub_query_chunks, [])
+        self.assertEqual(state.queries_tried, [])
+        self.assertEqual(state.sub_query_traces[0]["completion_reason"], "sufficient")
 
     def test_merge_dedup_skips_already_seen(self) -> None:
         """去重：已见过的 chunk 不应重复添加。"""
@@ -270,6 +279,7 @@ class AgenticGraphTest(unittest.TestCase):
         update = merge_and_dedup(state)
         state = state.model_copy(update=update)
         self.assertEqual(len(state.retrieved_chunks_json), 2)  # 1 existing + 1 new
+        self.assertEqual(len(state.current_sub_query_chunks), 2)
         self.assertIn("chunk:test1", state.seen_chunk_ids)
         self.assertIn("chunk:test0", state.seen_chunk_ids)
 
