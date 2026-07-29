@@ -1,0 +1,572 @@
+{
+  "total_records": 54,
+  "total_attempts": 71,
+  "transient_failures": 17,
+  "modes": {
+    "agentic": {
+      "attempted": 18,
+      "successful": 18,
+      "run_failures": 0,
+      "judge_failures": 0,
+      "latency_seconds": {
+        "mean": 65.36201838916662,
+        "median": 63.663970393499994
+      },
+      "mean_retrieval_calls": 2.7777777777777777,
+      "mean_retry_calls": 1.2777777777777777,
+      "web_search_used_count": 0,
+      "actual_modes": {
+        "agentic": 18
+      },
+      "metrics": {
+        "document_recall": {
+          "mean": 0.9333333333333333,
+          "n": 15
+        },
+        "fact_coverage": {
+          "mean": 0.7977777777777778,
+          "n": 15
+        },
+        "citation_validity": {
+          "mean": 0.9333333333333333,
+          "n": 15
+        },
+        "unanswerable_correct": {
+          "mean": 1,
+          "n": 3
+        },
+        "faithfulness": {
+          "mean": 0.9944444444444445,
+          "n": 18
+        },
+        "answer_correctness": {
+          "mean": 0.9361111111111111,
+          "n": 18
+        },
+        "answer_relevancy": {
+          "mean": 0.9444444444444444,
+          "n": 18
+        }
+      },
+      "categories": {
+        "guide_spec_comparison": {
+          "attempted": 2,
+          "successful": 2,
+          "metrics": {
+            "document_recall": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "fact_coverage": {
+              "mean": 0.8333333333333333,
+              "n": 2
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_correctness": {
+              "mean": 0.975,
+              "n": 2
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 2
+            }
+          },
+          "mean_latency_seconds": 72.18375017849985
+        },
+        "multi_document_synthesis": {
+          "attempted": 5,
+          "successful": 5,
+          "metrics": {
+            "document_recall": {
+              "mean": 1.0,
+              "n": 5
+            },
+            "fact_coverage": {
+              "mean": 0.88,
+              "n": 5
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 5
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 0.98,
+              "n": 5
+            },
+            "answer_correctness": {
+              "mean": 0.98,
+              "n": 5
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 5
+            }
+          },
+          "mean_latency_seconds": 77.51437366720002
+        },
+        "single_document_fact": {
+          "attempted": 8,
+          "successful": 8,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.875,
+              "n": 8
+            },
+            "fact_coverage": {
+              "mean": 0.7375,
+              "n": 8
+            },
+            "citation_validity": {
+              "mean": 0.875,
+              "n": 8
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "answer_correctness": {
+              "mean": 0.875,
+              "n": 8
+            },
+            "answer_relevancy": {
+              "mean": 0.875,
+              "n": 8
+            }
+          },
+          "mean_latency_seconds": 54.83566484199994
+        },
+        "unanswerable": {
+          "attempted": 3,
+          "successful": 3,
+          "metrics": {
+            "document_recall": {
+              "mean": null,
+              "n": 0
+            },
+            "fact_coverage": {
+              "mean": null,
+              "n": 0
+            },
+            "citation_validity": {
+              "mean": null,
+              "n": 0
+            },
+            "unanswerable_correct": {
+              "mean": 1,
+              "n": 3
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 3
+            }
+          },
+          "mean_latency_seconds": 68.63054785866659
+        }
+      }
+    },
+    "auto": {
+      "attempted": 18,
+      "successful": 18,
+      "run_failures": 0,
+      "judge_failures": 0,
+      "latency_seconds": {
+        "mean": 48.01460999850006,
+        "median": 39.4287516925001
+      },
+      "mean_retrieval_calls": 2.388888888888889,
+      "mean_retry_calls": 0.8888888888888888,
+      "web_search_used_count": 0,
+      "actual_modes": {
+        "agentic": 9,
+        "standard": 9
+      },
+      "metrics": {
+        "document_recall": {
+          "mean": 0.7,
+          "n": 15
+        },
+        "fact_coverage": {
+          "mean": 0.6466666666666667,
+          "n": 15
+        },
+        "citation_validity": {
+          "mean": 0.8125,
+          "n": 16
+        },
+        "unanswerable_correct": {
+          "mean": 1,
+          "n": 3
+        },
+        "faithfulness": {
+          "mean": 1.0,
+          "n": 18
+        },
+        "answer_correctness": {
+          "mean": 0.6444444444444445,
+          "n": 18
+        },
+        "answer_relevancy": {
+          "mean": 0.7777777777777778,
+          "n": 18
+        }
+      },
+      "categories": {
+        "guide_spec_comparison": {
+          "attempted": 2,
+          "successful": 2,
+          "metrics": {
+            "document_recall": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "fact_coverage": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 2
+            }
+          },
+          "mean_latency_seconds": 53.17348291749977
+        },
+        "multi_document_synthesis": {
+          "attempted": 5,
+          "successful": 5,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.5,
+              "n": 5
+            },
+            "fact_coverage": {
+              "mean": 0.48,
+              "n": 5
+            },
+            "citation_validity": {
+              "mean": 0.8,
+              "n": 5
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 5
+            },
+            "answer_correctness": {
+              "mean": 0.18,
+              "n": 5
+            },
+            "answer_relevancy": {
+              "mean": 0.6,
+              "n": 5
+            }
+          },
+          "mean_latency_seconds": 73.81759833880005
+        },
+        "single_document_fact": {
+          "attempted": 8,
+          "successful": 8,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.75,
+              "n": 8
+            },
+            "fact_coverage": {
+              "mean": 0.6625,
+              "n": 8
+            },
+            "citation_validity": {
+              "mean": 0.75,
+              "n": 8
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "answer_correctness": {
+              "mean": 0.7125,
+              "n": 8
+            },
+            "answer_relevancy": {
+              "mean": 0.75,
+              "n": 8
+            }
+          },
+          "mean_latency_seconds": 36.69087076975006
+        },
+        "unanswerable": {
+          "attempted": 3,
+          "successful": 3,
+          "metrics": {
+            "document_recall": {
+              "mean": null,
+              "n": 0
+            },
+            "fact_coverage": {
+              "mean": null,
+              "n": 0
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 1
+            },
+            "unanswerable_correct": {
+              "mean": 1,
+              "n": 3
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 3
+            }
+          },
+          "mean_latency_seconds": 31.767018762000287
+        }
+      }
+    },
+    "standard": {
+      "attempted": 18,
+      "successful": 18,
+      "run_failures": 0,
+      "judge_failures": 0,
+      "latency_seconds": {
+        "mean": 11.645248122499968,
+        "median": 9.563859582999953
+      },
+      "mean_retrieval_calls": 1,
+      "mean_retry_calls": 0,
+      "web_search_used_count": 0,
+      "actual_modes": {
+        "standard": 18
+      },
+      "metrics": {
+        "document_recall": {
+          "mean": 0.7666666666666667,
+          "n": 15
+        },
+        "fact_coverage": {
+          "mean": 0.6011111111111112,
+          "n": 15
+        },
+        "citation_validity": {
+          "mean": 0.9375,
+          "n": 16
+        },
+        "unanswerable_correct": {
+          "mean": 1,
+          "n": 3
+        },
+        "faithfulness": {
+          "mean": 0.9666666666666667,
+          "n": 18
+        },
+        "answer_correctness": {
+          "mean": 0.5555555555555556,
+          "n": 18
+        },
+        "answer_relevancy": {
+          "mean": 0.6,
+          "n": 18
+        }
+      },
+      "categories": {
+        "guide_spec_comparison": {
+          "attempted": 2,
+          "successful": 2,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.75,
+              "n": 2
+            },
+            "fact_coverage": {
+              "mean": 0.5833333333333334,
+              "n": 2
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_correctness": {
+              "mean": 0.15,
+              "n": 2
+            },
+            "answer_relevancy": {
+              "mean": 0.1,
+              "n": 2
+            }
+          },
+          "mean_latency_seconds": 7.063496794999992
+        },
+        "multi_document_synthesis": {
+          "attempted": 5,
+          "successful": 5,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.6,
+              "n": 5
+            },
+            "fact_coverage": {
+              "mean": 0.48000000000000004,
+              "n": 5
+            },
+            "citation_validity": {
+              "mean": 0.8,
+              "n": 5
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 0.88,
+              "n": 5
+            },
+            "answer_correctness": {
+              "mean": 0.15,
+              "n": 5
+            },
+            "answer_relevancy": {
+              "mean": 0.2,
+              "n": 5
+            }
+          },
+          "mean_latency_seconds": 10.488940884000021
+        },
+        "single_document_fact": {
+          "attempted": 8,
+          "successful": 8,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.875,
+              "n": 8
+            },
+            "fact_coverage": {
+              "mean": 0.68125,
+              "n": 8
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "answer_correctness": {
+              "mean": 0.74375,
+              "n": 8
+            },
+            "answer_relevancy": {
+              "mean": 0.825,
+              "n": 8
+            }
+          },
+          "mean_latency_seconds": 12.699775716749997
+        },
+        "unanswerable": {
+          "attempted": 3,
+          "successful": 3,
+          "metrics": {
+            "document_recall": {
+              "mean": null,
+              "n": 0
+            },
+            "fact_coverage": {
+              "mean": null,
+              "n": 0
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 1
+            },
+            "unanswerable_correct": {
+              "mean": 1,
+              "n": 3
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 3
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 3
+            }
+          },
+          "mean_latency_seconds": 13.81485415366645
+        }
+      }
+    }
+  }
+}

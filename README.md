@@ -9,7 +9,7 @@
 
 Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文档 → 自动解析索引 → 自然语言提问 → AI 从知识库中检索并回答，支持引用追溯和质量反馈。
 
-**代码量** ~11,300 行 · **测试** 85 单元 + 6 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
+**代码量** ~11,300 行 · **测试** 98 单元 + 7 e2e · **技术栈** Vue 3 / FastAPI / ChromaDB / Ollama
 
 ---
 
@@ -32,7 +32,7 @@ Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文�
 - 每个子问题独立评估与改写（最多 3 轮），整个请求最多 8 次知识库检索
 - DuckDuckGo Web 搜索回退
 - LangGraph 8 节点上下文准备图，最终答案只流式生成一次
-- RAGAS 评测：context_recall 比传统模式提升 10%
+- 可复现 18 题基准：固定语料、三模式对比、确定性指标与 LLM Judge
 
 ### 对话管理
 - ChatGPT 风格对话列表，多轮对话持久化
@@ -44,7 +44,7 @@ Knowledge Agent 是一个面向企业的智能知识库问答平台。上传文�
 - BM25 索引持久化 + Embedding 缓存
 - 结构化日志 + X-Request-ID 全链路追踪
 - 健康检查覆盖数据库 / ChromaDB / LLM
-- CI：85 单元测试 + 6 e2e 冒烟测试 + 类型检查
+- CI：98 单元测试 + 7 e2e 冒烟测试 + 类型检查
 - Docker Compose 一键部署
 ---
 
@@ -83,15 +83,25 @@ FastAPI 后端
 
 ---
 
-## RAGAS 评测数据
+## 可复现 RAG 评测
 
-| 指标 | 传统 RAG | Agentic RAG | 变化 |
-|------|---------|------------|------|
-| context_precision | 0.70 | 0.70 | — |
-| context_recall | 0.49 | **0.59** | **+10%** |
-| faithfulness | 0.93 | 0.90 | -3% |
+2026-07-29 使用固定的 5 文档语料和 18 道人工标注题，分别运行
+Standard、Agentic 和 Auto。主实验禁用 Web 搜索，最终 54 个结果均完成，
+LLM Judge 覆盖 54/54。
 
-Agentic 模式在不损失精确度的前提下，召回率提升 10%。
+| 指标 | Standard | Agentic | Auto |
+|------|---------:|--------:|-----:|
+| 文档召回率 | 0.767 | **0.933** | 0.700 |
+| 必要事实覆盖率 | 0.601 | **0.798** | 0.647 |
+| Faithfulness | 0.967 | 0.994 | **1.000** |
+| Answer correctness | 0.556 | **0.936** | 0.644 |
+| 无答案正确率 | 1.000 | 1.000 | 1.000 |
+| 平均延迟 | **11.65s** | 65.36s | 48.01s |
+
+Agentic 的检索与答案质量最高，但平均延迟约为 Standard 的 5.6 倍。
+Auto 本次将 9/18 题路由到 Agentic，质量与延迟均未达到 Agentic。
+实验共发生 17 次瞬时超时，均通过断点恢复补齐。
+详见 [`backend/eval/README.md`](backend/eval/README.md) 和评测汇总。
 
 ---
 

@@ -4,7 +4,7 @@
 
 企业 RAG 知识库问答管理系统。统一流式入口支持自动、标准和 Agentic 三种执行策略。
 
-已打通完整链路：知识库管理、文档解析切块、向量索引、语义检索、流式问答、多轮对话、引用追溯、质量反馈、Agentic 自主检索（查询分析→检索→评估→改写重试→Web 搜索回退）。前端统一对话界面，仪表盘首页，全局错误提示，RAGAS 对比评测。
+已打通完整链路：知识库管理、文档解析切块、向量索引、语义检索、流式问答、多轮对话、引用追溯、质量反馈、Agentic 自主检索（查询分析→检索→评估→改写重试→Web 搜索回退）。前端统一对话界面，仪表盘首页，全局错误提示，可复现三模式 RAG 对比评测。
 
 ## 系统架构
 
@@ -54,7 +54,7 @@ flowchart LR
 - Document parsing: Markdown / Text / PDF（pdfplumber 表格提取）/ DOCX
 - Embedding: OpenAI-compatible API，推荐本地 Ollama `nomic-embed-text`
 - LLM: OpenAI-compatible API，支持流式输出 + JSON mode
-- 评测: RAGAS（faithfulness / context_precision / context_recall）
+- 评测: 固定 18 题基准（确定性检索/引用指标 + LLM Judge）
 
 ## 已实现功能
 
@@ -83,7 +83,7 @@ flowchart LR
 - **LangGraph 状态图**：8 个上下文准备节点、4 条路由分支，最终答案统一流式生成一次
 - **自动策略**：简单问题使用标准检索，复杂问题进入 Agentic 流程；调试时可强制指定策略
 - **统一入口**：`/questions/stream` 同时支持 `auto | standard | agentic`
-- **RAGAS 评测**：Agentic context_recall 比传统 RAG 提升 10%（0.49→0.59），precision 持平
+- **可复现评测**：Agentic 文档召回率 0.933、答案正确性 0.936，但平均延迟 65.36s
 
 ### 对话管理
 - **对话持久化**：`conversations` 表 + CRUD API，Q&A 关联 `conversation_id`，页面刷新不丢对话
@@ -101,9 +101,9 @@ flowchart LR
 - CORS 可配置（`CORS_ORIGINS` 环境变量）
 - Docker Compose 一键部署
 - CI：GitHub Actions 自动测试 + 类型检查 + 构建
-- 后端 85 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、检索预算等）
+- 后端 98 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、检索预算、评测等）
 - 设计决策文档（`docs/decisions.md`）+ 设计规范文档（`DESIGN.md`）
-- RAGAS 对比评测结果（传统 vs Agentic）
+- 固定语料三模式对比评测结果（Standard vs Agentic vs Auto）
 
 ### 性能优化
 - BM25 索引 pickle 持久化，重启秒加载，免全量重建
@@ -157,8 +157,8 @@ flowchart LR
 │   │   ├── schemas.py        # Pydantic 请求/响应模型（含 Agentic 类型）
 │   │   ├── logging_config.py # 结构化日志（JSON / 文本 + request_id）
 │   │   └── main.py           # FastAPI app（CORS、X-Request-ID、上传限制、健康检查、启动恢复）
-│   ├── tests/                # 85 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图等）
-│   ├── eval/                 # 检索质量评估 + RAGAS 对比脚本
+│   ├── tests/                # 98 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、评测等）
+│   ├── eval/                 # 固定数据集 + 三模式评测 + 历史评测脚本
 │   ├── data/                 # 本地数据库、上传文件、Chroma 数据
 │   └── requirements.txt
 ├── frontend/
@@ -478,29 +478,38 @@ AGENTIC_WEB_SEARCH_PROVIDER=duckduckgo  # Web 搜索提供商（默认 duckduckg
 
 ## 检索质量评估
 
-### RAGAS 对比评估
+### 固定语料三模式评估
 
-脚本位置：`backend/eval/ragas_eval.py`。自动读取项目 `.env` 配置的 LLM 作为 judge。
+评测入口：`backend/eval/benchmark_runner.py`；数据集：
+`backend/eval/benchmark.jsonl`。18 道人工标注题覆盖单文档事实、多文档综合、
+MDN/RFC 对照和无答案问题。主实验固定使用 5 份文档并关闭 Web 搜索。
 
-对比传统 RAG 和 Agentic RAG 在 faithfulness、context_precision、context_recall 上的表现。
+**2026-07-29 评测结果（18 题，LLM Judge 54/54）：**
 
-**评测结果（5 条 QA，DeepSeek as judge）：**
+| Metric | Standard | Agentic | Auto |
+|--------|---------:|--------:|-----:|
+| document_recall | 0.767 | **0.933** | 0.700 |
+| fact_coverage | 0.601 | **0.798** | 0.647 |
+| citation_validity | **0.938** | 0.933 | 0.812 |
+| unanswerable_correct | 1.000 | 1.000 | 1.000 |
+| faithfulness | 0.967 | 0.994 | **1.000** |
+| answer_correctness | 0.556 | **0.936** | 0.644 |
+| answer_relevancy | 0.600 | **0.944** | 0.778 |
+| mean latency | **11.65s** | 65.36s | 48.01s |
 
-| Metric | Traditional | Agentic | Δ |
-|--------|------------|---------|---|
-| context_precision | 0.7000 | 0.7000 | — |
-| context_recall | 0.4905 | **0.5905** | **+10%** |
-| faithfulness | 0.9333 | 0.9000 | -3% |
-
-结论：Agentic RAG 在不损失精确度的前提下，召回率提升 10%。
+Agentic 的检索、事实覆盖和答案质量最高，代价是约 5.6 倍于 Standard
+的平均延迟。Auto 将 9/18 题路由到 Agentic，本次未取得两者间理想的
+质量/延迟折中。运行中出现 17 次瞬时 LLM 超时，均通过 `--resume` 补齐；
+汇总保留总尝试数和失败尝试数。
 
 ```bash
-# 1. 生成评估数据集（从 QA 历史提取）
-cd backend && .venv/bin/python eval/generate_eval_dataset.py
-
-# 2. 跑对比评测（依赖 ragas、datasets、langchain-openai）
-.venv/bin/python eval/ragas_eval.py
+cd backend
+.venv/bin/python eval/benchmark_runner.py \
+  --kb-id <evaluation-kb-id> \
+  --modes standard agentic auto
 ```
+
+完整复现说明见 `backend/eval/README.md`。
 
 ## CI
 
@@ -508,13 +517,13 @@ cd backend && .venv/bin/python eval/generate_eval_dataset.py
 
 | Job | 内容 |
 |-----|------|
-| backend | Python 3.12 + pip install + 85 个单元测试 |
+| backend | Python 3.12 + pip install + 98 个单元测试 |
 | frontend | Node 20 + npm ci + vue-tsc 类型检查 + vite build |
 | e2e | Playwright Chromium 冒烟测试（创建知识库 → 问答页 → 文档管理 → 响应式） |
 
 ## 测试
 
-**后端 85 个单元测试：**
+**后端 98 个单元测试：**
 
 ```bash
 cd backend && .venv/bin/python -m unittest discover tests
