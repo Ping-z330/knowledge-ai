@@ -212,6 +212,61 @@ class RrfFusionTest(unittest.TestCase):
         self.assertIn("chunk:c1", vector_ids)
 
 
+class ProtectedRerankCandidateTest(unittest.TestCase):
+    def _chunk(self, chunk_id: str) -> object:
+        from app.services.retrieval import RetrievedChunk
+
+        return RetrievedChunk(
+            vector_id=f"chunk:{chunk_id}",
+            text=chunk_id,
+            score=0.5,
+            metadata={"chunk_id": chunk_id},
+        )
+
+    def test_keyword_top_one_survives_catastrophic_rerank(self) -> None:
+        from app.services.retrieval import _preserve_protected_chunk
+
+        protected = self._chunk("exact-lexical-fact")
+        reranked = [
+            self._chunk("distractor-1"),
+            self._chunk("distractor-2"),
+            self._chunk("distractor-3"),
+            self._chunk("distractor-4"),
+            self._chunk("distractor-5"),
+        ]
+
+        results = _preserve_protected_chunk(
+            reranked,
+            protected=protected,
+            top_k=5,
+        )
+
+        self.assertEqual(len(results), 5)
+        self.assertEqual(results[0].vector_id, "chunk:exact-lexical-fact")
+        self.assertNotIn("chunk:distractor-5", {item.vector_id for item in results})
+
+    def test_duplicate_protected_candidate_is_not_repeated(self) -> None:
+        from app.services.retrieval import _preserve_protected_chunk
+
+        protected = self._chunk("exact-lexical-fact")
+        reranked = [
+            self._chunk("distractor-1"),
+            protected,
+            self._chunk("distractor-2"),
+        ]
+
+        results = _preserve_protected_chunk(
+            reranked,
+            protected=protected,
+            top_k=3,
+        )
+
+        self.assertEqual(len(results), 3)
+        self.assertEqual(
+            sum(item.vector_id == protected.vector_id for item in results),
+            1,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
-

@@ -46,10 +46,16 @@ def _rebuild_all_keyword_indexes() -> None:
                 try:
                     chunk_dicts = db_conn.execute(
                         """
-                        SELECT id, knowledge_base_id, document_id, chunk_index,
-                               text, source_label, page_number, section_title
-                        FROM chunks WHERE knowledge_base_id = ?
-                        ORDER BY chunk_index ASC
+                        SELECT
+                            chunks.id, chunks.knowledge_base_id,
+                            chunks.document_id, chunks.chunk_index,
+                            chunks.text, chunks.source_label,
+                            chunks.page_number, chunks.section_title,
+                            documents.filename
+                        FROM chunks
+                        JOIN documents ON documents.id = chunks.document_id
+                        WHERE chunks.knowledge_base_id = ?
+                        ORDER BY chunks.chunk_index ASC
                         """,
                         (kb_id,),
                     ).fetchall()

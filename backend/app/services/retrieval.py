@@ -83,12 +83,52 @@ def retrieve_chunks(
             if reranker is not None:
                 texts = [chunk.text for chunk in merged]
                 ranked = reranker.rerank(clean_query, texts, top_n=top_k)
-                merged = [merged[r.index] for r in ranked]
+                reranked = [merged[r.index] for r in ranked]
+                # Cross-encoders can make catastrophic false-negative errors,
+                # especially for mixed-language queries and exact technical
+                # terms. Preserve BM25's strongest lexical match while letting
+                # the reranker fill the remaining positions.
+                protected = (
+                    _matching_chunk(merged, kw_results[0])
+                    if kw_results
+                    else None
+                )
+                merged = _preserve_protected_chunk(
+                    reranked,
+                    protected=protected,
+                    top_k=top_k,
+                )
         except Exception:
             # 重排失败时降级为原始结果
             merged = merged[:top_k]
 
     return merged[:top_k]
+
+
+def _matching_chunk(
+    chunks: list[RetrievedChunk],
+    keyword_result: object,
+) -> RetrievedChunk | None:
+    metadata = getattr(keyword_result, "metadata", {})
+    chunk_id = metadata.get("chunk_id", "")
+    vector_id = f"chunk:{chunk_id}"
+    return next((chunk for chunk in chunks if chunk.vector_id == vector_id), None)
+
+
+def _preserve_protected_chunk(
+    reranked: list[RetrievedChunk],
+    *,
+    protected: RetrievedChunk | None,
+    top_k: int,
+) -> list[RetrievedChunk]:
+    """Keep one independent lexical candidate in the final reranked context."""
+    if protected is None:
+        return reranked[:top_k]
+
+    remaining = [
+        chunk for chunk in reranked if chunk.vector_id != protected.vector_id
+    ]
+    return [protected, *remaining[: max(top_k - 1, 0)]]
 
 
 def _to_retrieved_chunk(result: VectorSearchResult) -> RetrievedChunk:

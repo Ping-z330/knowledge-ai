@@ -1,0 +1,196 @@
+{
+  "total_records": 18,
+  "total_attempts": 22,
+  "transient_failures": 4,
+  "modes": {
+    "auto": {
+      "attempted": 18,
+      "successful": 18,
+      "run_failures": 0,
+      "judge_failures": 4,
+      "latency_seconds": {
+        "mean": 41.71941641549974,
+        "median": 24.54421898849978
+      },
+      "mean_retrieval_calls": 2.111111111111111,
+      "mean_retry_calls": 0.5,
+      "web_search_used_count": 0,
+      "actual_modes": {
+        "agentic": 9,
+        "standard": 9
+      },
+      "metrics": {
+        "document_recall": {
+          "mean": 0.9666666666666667,
+          "n": 15
+        },
+        "fact_coverage": {
+          "mean": 0.8466666666666667,
+          "n": 15
+        },
+        "citation_validity": {
+          "mean": 1.0,
+          "n": 17
+        },
+        "unanswerable_correct": {
+          "mean": 1,
+          "n": 3
+        },
+        "faithfulness": {
+          "mean": 0.9857142857142858,
+          "n": 14
+        },
+        "answer_correctness": {
+          "mean": 0.9857142857142858,
+          "n": 14
+        },
+        "answer_relevancy": {
+          "mean": 1.0,
+          "n": 14
+        }
+      },
+      "categories": {
+        "guide_spec_comparison": {
+          "attempted": 2,
+          "successful": 2,
+          "metrics": {
+            "document_recall": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "fact_coverage": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 2
+            }
+          },
+          "mean_latency_seconds": 89.1135002939991
+        },
+        "multi_document_synthesis": {
+          "attempted": 5,
+          "successful": 5,
+          "metrics": {
+            "document_recall": {
+              "mean": 0.9,
+              "n": 5
+            },
+            "fact_coverage": {
+              "mean": 0.84,
+              "n": 5
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 5
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 0.95,
+              "n": 4
+            },
+            "answer_correctness": {
+              "mean": 0.975,
+              "n": 4
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 4
+            }
+          },
+          "mean_latency_seconds": 82.02427506879903
+        },
+        "single_document_fact": {
+          "attempted": 8,
+          "successful": 8,
+          "metrics": {
+            "document_recall": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "fact_coverage": {
+              "mean": 0.8125,
+              "n": 8
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 8
+            },
+            "unanswerable_correct": {
+              "mean": null,
+              "n": 0
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 6
+            },
+            "answer_correctness": {
+              "mean": 0.9833333333333334,
+              "n": 6
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 6
+            }
+          },
+          "mean_latency_seconds": 11.78679191912488
+        },
+        "unanswerable": {
+          "attempted": 3,
+          "successful": 3,
+          "metrics": {
+            "document_recall": {
+              "mean": null,
+              "n": 0
+            },
+            "fact_coverage": {
+              "mean": null,
+              "n": 0
+            },
+            "citation_validity": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "unanswerable_correct": {
+              "mean": 1,
+              "n": 3
+            },
+            "faithfulness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_correctness": {
+              "mean": 1.0,
+              "n": 2
+            },
+            "answer_relevancy": {
+              "mean": 1.0,
+              "n": 2
+            }
+          },
+          "mean_latency_seconds": 22.76892806466761
+        }
+      }
+    }
+  }
+}

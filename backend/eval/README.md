@@ -49,7 +49,8 @@ fallback experiment.
 Results are written to `eval/results/` as raw JSONL, scored JSONL, summary JSON,
 and summary Markdown. Raw records are flushed after every question/mode pair so
 an interrupted run can resume. Successful pairs are skipped; failed pairs are
-retried.
+retried. The CLI rebuilds the selected knowledge base's BM25 index before the
+run because it does not execute the FastAPI lifespan.
 
 ## Metrics
 
@@ -92,6 +93,15 @@ The balanced Auto routing experiment is recorded under
 multi-document correctness 0.900, and mean latency 55.28 seconds. A 2/4 budget
 experiment reduced latency to 43.43 seconds but also reduced multi-document
 correctness to 0.590, so the checked-in implementation keeps the 2/6 Auto budget.
+
+The 2026-07-30 single-fact retrieval fix is recorded under
+`results/single-fact-fix/`. The final resumed run is
+`20260730-004503-summary.md`: all 18 questions succeeded, document recall was
+0.967, fact coverage 0.847, answer correctness 0.986, and mean latency 41.72
+seconds. Single-document correctness improved from 0.738 to 0.983 and
+multi-document correctness reached 0.975. Deterministic metrics cover all 18
+questions; 14/18 Judge responses parsed successfully. The diagnosis is recorded
+in `docs/diagnostics/2026-07-30-single-fact-retrieval.md`.
 
 ## Tests
 

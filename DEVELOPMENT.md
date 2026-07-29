@@ -83,7 +83,7 @@ flowchart LR
 - **LangGraph 状态图**：8 个上下文准备节点、4 条路由分支，最终答案统一流式生成一次
 - **自动策略**：简单问题使用标准检索，复杂问题进入 Agentic 流程；调试时可强制指定策略
 - **统一入口**：`/questions/stream` 同时支持 `auto | standard | agentic`
-- **可复现评测**：Agentic 文档召回率 0.933、答案正确性 0.936，但平均延迟 65.36s
+- **可复现评测**：修复后 Auto 文档召回率 0.967、答案正确性 0.986，平均延迟 41.72s
 
 ### 对话管理
 - **对话持久化**：`conversations` 表 + CRUD API，Q&A 关联 `conversation_id`，页面刷新不丢对话
@@ -101,7 +101,7 @@ flowchart LR
 - CORS 可配置（`CORS_ORIGINS` 环境变量）
 - Docker Compose 一键部署
 - CI：GitHub Actions 自动测试 + 类型检查 + 构建
-- 后端 109 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、检索预算、评测等）
+- 后端 113 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、检索预算、评测等）
 - 设计决策文档（`docs/decisions.md`）+ 设计规范文档（`DESIGN.md`）
 - 固定语料三模式对比评测结果（Standard vs Agentic vs Auto）
 
@@ -157,7 +157,7 @@ flowchart LR
 │   │   ├── schemas.py        # Pydantic 请求/响应模型（含 Agentic 类型）
 │   │   ├── logging_config.py # 结构化日志（JSON / 文本 + request_id）
 │   │   └── main.py           # FastAPI app（CORS、X-Request-ID、上传限制、健康检查、启动恢复）
-│   ├── tests/                # 109 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、评测等）
+│   ├── tests/                # 113 个单元测试（检索、分词、RRF、问答、任务队列、Agentic 图、评测等）
 │   ├── eval/                 # 固定数据集 + 三模式评测 + 历史评测脚本
 │   ├── data/                 # 本地数据库、上传文件、Chroma 数据
 │   └── requirements.txt
@@ -484,24 +484,27 @@ AGENTIC_WEB_SEARCH_PROVIDER=duckduckgo  # Web 搜索提供商（默认 duckduckg
 `backend/eval/benchmark.jsonl`。18 道人工标注题覆盖单文档事实、多文档综合、
 MDN/RFC 对照和无答案问题。主实验固定使用 5 份文档并关闭 Web 搜索。
 
-**2026-07-29 评测结果（18 题，LLM Judge 54/54）：**
+**固定基线与 2026-07-30 Auto 修复回归：**
+
+Standard、Agentic 为 2026-07-29 三模式基线；Auto 为修复命令行评测的
+BM25 初始化、关键词来源元数据和重排误杀保护后的 2026-07-30 回归。
 
 | Metric | Standard | Agentic | Auto |
 |--------|---------:|--------:|-----:|
-| document_recall | 0.767 | **0.933** | **0.933** |
-| fact_coverage | 0.601 | **0.798** | 0.749 |
-| citation_validity | **0.938** | 0.933 | 0.933 |
+| document_recall | 0.767 | 0.933 | **0.967** |
+| fact_coverage | 0.601 | 0.798 | **0.847** |
+| citation_validity | 0.938 | 0.933 | **1.000** |
 | unanswerable_correct | 1.000 | 1.000 | 1.000 |
-| faithfulness | 0.967 | **0.994** | 0.961 |
-| answer_correctness | 0.556 | **0.936** | 0.856 |
-| answer_relevancy | 0.600 | **0.944** | 0.889 |
-| mean latency | **11.65s** | 65.36s | 55.28s |
+| faithfulness | 0.967 | **0.994** | 0.986 |
+| answer_correctness | 0.556 | 0.936 | **0.986** |
+| answer_relevancy | 0.600 | 0.944 | **1.000** |
+| mean latency | **11.65s** | 65.36s | 41.72s |
 
-Agentic 的检索、事实覆盖和答案质量最高，代价是约 5.6 倍于 Standard
-的平均延迟。优化后的 Auto 使用确定性结构信号和强制拆分，将 9/18 题
-路由到 Agentic；多文档正确性从旧 Auto 的 0.180 提升到 0.900，整体
-正确性达到 0.856。Auto 平均延迟仍为 55.28 秒，因此下一阶段性能工作
-应减少 Agentic 内部串行 LLM 调用，而不是继续削减检索覆盖。
+Auto 将 9/18 题路由到 Agentic。修复后单文档正确性从 0.738 提升到
+0.983，多文档正确性达到 0.975，整体正确性达到 0.986，平均延迟从
+55.28 秒降至 41.72 秒。18 道题全部成功；LLM Judge 成功解析 14/18，
+确定性指标覆盖 18/18。下一阶段性能工作仍应减少 Agentic 内部串行 LLM
+调用，而不是削减检索覆盖。
 
 ```bash
 cd backend
@@ -518,13 +521,13 @@ cd backend
 
 | Job | 内容 |
 |-----|------|
-| backend | Python 3.12 + pip install + 109 个单元测试 |
+| backend | Python 3.12 + pip install + 113 个单元测试 |
 | frontend | Node 20 + npm ci + vue-tsc 类型检查 + vite build |
 | e2e | Playwright Chromium 冒烟测试（创建知识库 → 问答页 → 文档管理 → 响应式） |
 
 ## 测试
 
-**后端 109 个单元测试：**
+**后端 113 个单元测试：**
 
 ```bash
 cd backend && .venv/bin/python -m unittest discover tests

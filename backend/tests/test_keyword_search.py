@@ -36,6 +36,19 @@ class TokenizeTest(unittest.TestCase):
         self.assertIn("7", tokens)
         self.assertIn("b", tokens)
 
+    def test_hyphenated_attribute_uses_symmetric_tokens(self) -> None:
+        from app.services.keyword_search import _tokenize
+
+        query_tokens = _tokenize("Max-Age 和 Expires 哪个优先？")
+        document_tokens = _tokenize(
+            "Max-Age is less error-prone and takes precedence over Expires."
+        )
+
+        self.assertIn("max", query_tokens)
+        self.assertIn("age", query_tokens)
+        self.assertIn("expires", query_tokens)
+        self.assertTrue({"max", "age", "expires"} <= set(document_tokens))
+
     def test_empty_string(self) -> None:
         from app.services.keyword_search import _tokenize
 
@@ -106,6 +119,40 @@ class KeywordSearchEngineTest(unittest.TestCase):
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].metadata["chunk_id"], "c1")
         self.assertEqual(results[0].metadata["filename"], "a.txt")
+
+    def test_mixed_language_cookie_query_ranks_exact_fact_first(self) -> None:
+        texts = [
+            (
+                "Max-Age is less error-prone, and takes precedence when both "
+                "Max-Age and Expires are set."
+            ),
+            "HTTP caching defines max-age and the Expires response header.",
+            "Browser storage security includes Secure and HttpOnly attributes.",
+            "Promises represent eventual completion of asynchronous operations.",
+            "The JavaScript event loop processes queued jobs.",
+            "A private cache is dedicated to a single user.",
+            "Fresh HTTP responses can be reused without validation.",
+            "A shared cache stores responses for reuse by multiple users.",
+        ]
+        metadatas = [
+            {"chunk_id": "cookie-lifetime", "filename": "cookies.md"},
+            {"chunk_id": "http-cache", "filename": "caching.md"},
+            {"chunk_id": "browser-security", "filename": "cookies.md"},
+            {"chunk_id": "promises", "filename": "promises.md"},
+            {"chunk_id": "event-loop", "filename": "execution.md"},
+            {"chunk_id": "private-cache", "filename": "caching.md"},
+            {"chunk_id": "fresh-cache", "filename": "caching.md"},
+            {"chunk_id": "shared-cache", "filename": "caching.md"},
+        ]
+        self.engine.build_index("cookie_kb", texts, metadatas)
+
+        results = self.engine.search(
+            "cookie_kb",
+            "Cookie 的 Max-Age 和 Expires 同时设置时哪个优先？",
+            top_k=3,
+        )
+
+        self.assertEqual(results[0].metadata["chunk_id"], "cookie-lifetime")
 
 
 class KeywordSearchEngineScheduleTest(unittest.TestCase):

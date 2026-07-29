@@ -211,7 +211,10 @@ class BenchmarkRunnerTest(unittest.TestCase):
                 answer="当前知识库没有相关资料。",
                 sources=[],
             )
-            with patch("eval.benchmark_runner.run_one", return_value=fake):
+            with (
+                patch("eval.benchmark_runner.prepare_keyword_index"),
+                patch("eval.benchmark_runner.run_one", return_value=fake),
+            ):
                 paths = run(args)
             for path in paths.values():
                 self.assertTrue(path.exists(), path)

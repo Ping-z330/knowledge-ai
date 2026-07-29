@@ -137,8 +137,8 @@ class ChunkRepositoryTest(unittest.TestCase):
 
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0]["text"], "replacement")
+            self.assertEqual(rows[0]["filename"], "manual.txt")
 
 
 if __name__ == "__main__":
     unittest.main()
-

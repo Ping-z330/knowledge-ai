@@ -83,6 +83,23 @@ def completed_keys(records: list[dict[str, Any]]) -> set[tuple[str, str]]:
     }
 
 
+def prepare_keyword_index(knowledge_base_id: str) -> None:
+    """Build BM25 state because the CLI does not run the FastAPI lifespan."""
+    from app.database import connection_scope
+    from app.repositories.chunks import ChunkRepository
+    from app.services.indexing import rebuild_keyword_index
+
+    with connection_scope() as connection:
+        chunks = ChunkRepository(connection).list_for_knowledge_base(
+            knowledge_base_id
+        )
+    rebuild_keyword_index(
+        knowledge_base_id=knowledge_base_id,
+        chunks=chunks,
+        debounce=False,
+    )
+
+
 def _serialize_source(source: Any) -> dict[str, Any]:
     return {
         "citation": source.citation,
@@ -188,6 +205,7 @@ def run(args: argparse.Namespace) -> dict[str, Path]:
     if not 1 <= args.top_k <= 20:
         raise ValueError("--top-k must be between 1 and 20")
 
+    prepare_keyword_index(args.kb_id)
     previous = _load_jsonl(args.resume) if args.resume else []
     done = completed_keys(previous)
     args.output_dir.mkdir(parents=True, exist_ok=True)

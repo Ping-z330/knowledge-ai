@@ -17,11 +17,14 @@ class ChunkRepository:
         rows = self.connection.execute(
             """
             SELECT
-                id, knowledge_base_id, document_id, chunk_index,
-                text, source_label, page_number, section_title, vector_id, created_at
+                chunks.id, chunks.knowledge_base_id, chunks.document_id,
+                chunks.chunk_index, chunks.text, chunks.source_label,
+                chunks.page_number, chunks.section_title, chunks.vector_id,
+                chunks.created_at, documents.filename
             FROM chunks
-            WHERE knowledge_base_id = ?
-            ORDER BY chunk_index ASC
+            JOIN documents ON documents.id = chunks.document_id
+            WHERE chunks.knowledge_base_id = ?
+            ORDER BY chunks.chunk_index ASC
             """,
             (knowledge_base_id,),
         ).fetchall()
@@ -31,19 +34,21 @@ class ChunkRepository:
         rows = self.connection.execute(
             """
             SELECT
-                id,
-                knowledge_base_id,
-                document_id,
-                chunk_index,
-                text,
-                source_label,
-                page_number,
-                section_title,
-                vector_id,
-                created_at
+                chunks.id,
+                chunks.knowledge_base_id,
+                chunks.document_id,
+                chunks.chunk_index,
+                chunks.text,
+                chunks.source_label,
+                chunks.page_number,
+                chunks.section_title,
+                chunks.vector_id,
+                chunks.created_at,
+                documents.filename
             FROM chunks
-            WHERE document_id = ?
-            ORDER BY chunk_index ASC
+            JOIN documents ON documents.id = chunks.document_id
+            WHERE chunks.document_id = ?
+            ORDER BY chunks.chunk_index ASC
             """,
             (document_id,),
         ).fetchall()
