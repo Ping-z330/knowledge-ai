@@ -57,9 +57,15 @@ class UnifiedRagExecutionTest(unittest.TestCase):
         standard = _prepared()
 
         with (
-            patch.object(rag_execution, "analyze_query_complexity", return_value=analysis),
+            patch.object(
+                rag_execution,
+                "decompose_complex_query",
+                return_value=analysis.sub_questions,
+            ),
             patch.object(rag_execution, "prepare_standard_answer", return_value=standard),
-            patch.object(rag_execution.ToolCallingLLMProvider, "from_settings"),
+            patch.object(
+                rag_execution.ToolCallingLLMProvider, "from_settings"
+            ) as provider,
             patch.object(rag_execution, "prepare_agentic_answer") as agentic,
         ):
             result = rag_execution.prepare_answer(
@@ -70,7 +76,132 @@ class UnifiedRagExecutionTest(unittest.TestCase):
 
         self.assertEqual(result.strategy_used, "standard")
         self.assertEqual(result.retrieval_trace["auto_route"], "standard")
+        self.assertEqual(result.retrieval_trace["route_source"], "rule")
+        provider.assert_not_called()
         agentic.assert_not_called()
+
+    def test_auto_complex_rule_uses_agentic_with_reduced_budget(self) -> None:
+        from app.services import rag_execution
+
+        analysis = type(
+            "Analysis",
+            (),
+            {
+                "is_complex": True,
+                "sub_questions": ["什么是缓存？", "什么是 Cookie？"],
+            },
+        )()
+        agentic = _prepared("agentic")
+        with (
+            patch.object(
+                rag_execution,
+                "decompose_complex_query",
+                return_value=analysis.sub_questions,
+            ),
+            patch.object(
+                rag_execution, "prepare_agentic_answer", return_value=agentic
+            ) as prepare_agentic,
+            patch.object(rag_execution.ToolCallingLLMProvider, "from_settings"),
+        ):
+            result = rag_execution.prepare_answer(
+                knowledge_base_id="kb-1",
+                question="缓存与 Cookie 有什么不同？",
+                strategy="auto",
+            )
+
+        kwargs = prepare_agentic.call_args.kwargs
+        self.assertTrue(kwargs["initial_is_complex"])
+        self.assertEqual(
+            kwargs["initial_sub_queries"],
+            ["什么是缓存？", "什么是 Cookie？"],
+        )
+        self.assertEqual(kwargs["max_retrieval_rounds"], 2)
+        self.assertEqual(kwargs["max_total_retrieval_calls"], 6)
+        self.assertEqual(result.retrieval_trace["auto_route"], "agentic")
+        self.assertEqual(result.retrieval_trace["route_source"], "rule")
+
+    def test_auto_invalid_complex_split_stays_agentic_on_original_question(self) -> None:
+        from app.services import rag_execution
+
+        analysis = type(
+            "Analysis",
+            (),
+            {"is_complex": True, "sub_questions": ["只有一个子问题"]},
+        )()
+        with (
+            patch.object(
+                rag_execution,
+                "decompose_complex_query",
+                return_value=[],
+            ),
+            patch.object(
+                rag_execution,
+                "prepare_agentic_answer",
+                return_value=_prepared("agentic"),
+            ) as prepare_agentic,
+            patch.object(rag_execution.ToolCallingLLMProvider, "from_settings"),
+        ):
+            rag_execution.prepare_answer(
+                knowledge_base_id="kb-1",
+                question="比较 A 和 B 有什么不同？",
+                strategy="auto",
+            )
+
+        kwargs = prepare_agentic.call_args.kwargs
+        self.assertTrue(kwargs["initial_is_complex"])
+        self.assertEqual(kwargs["initial_sub_queries"], [])
+
+    def test_auto_rule_agentic_survives_decomposition_failure(self) -> None:
+        from app.services import rag_execution
+
+        with (
+            patch.object(
+                rag_execution,
+                "decompose_complex_query",
+                side_effect=RuntimeError("decomposition unavailable"),
+            ),
+            patch.object(
+                rag_execution,
+                "prepare_agentic_answer",
+                return_value=_prepared("agentic"),
+            ) as prepare_agentic,
+            patch.object(rag_execution.ToolCallingLLMProvider, "from_settings"),
+        ):
+            result = rag_execution.prepare_answer(
+                knowledge_base_id="kb-1",
+                question="比较 A 和 B 有什么不同？",
+                strategy="auto",
+            )
+
+        self.assertTrue(prepare_agentic.call_args.kwargs["initial_is_complex"])
+        self.assertEqual(prepare_agentic.call_args.kwargs["initial_sub_queries"], [])
+        self.assertIn(
+            "decomposition unavailable",
+            result.retrieval_trace["decomposition_fallback_reason"],
+        )
+
+    def test_forced_agentic_keeps_full_budget(self) -> None:
+        from app.services import rag_execution
+
+        with patch.object(
+            rag_execution,
+            "prepare_agentic_answer",
+            return_value=_prepared("agentic"),
+        ) as prepare_agentic:
+            rag_execution.prepare_answer(
+                knowledge_base_id="kb-1",
+                question="复杂问题",
+                strategy="agentic",
+            )
+
+        self.assertEqual(
+            prepare_agentic.call_args.kwargs["max_retrieval_rounds"],
+            3,
+        )
+        self.assertEqual(
+            prepare_agentic.call_args.kwargs["max_total_retrieval_calls"],
+            8,
+        )
 
     def test_agentic_failure_falls_back_to_standard(self) -> None:
         from app.services import rag_execution

@@ -86,6 +86,13 @@ transient LLM timeouts before resume recovery. Agentic achieved the strongest
 document recall (0.933), fact coverage (0.798), and answer correctness (0.936),
 with 65.36 seconds mean latency versus 11.65 seconds for Standard.
 
+The balanced Auto routing experiment is recorded under
+`results/auto-routing-v2-final/`. Its final result completed 18/18 questions and
+18/18 Judge calls: document recall 0.933, answer correctness 0.856,
+multi-document correctness 0.900, and mean latency 55.28 seconds. A 2/4 budget
+experiment reduced latency to 43.43 seconds but also reduced multi-document
+correctness to 0.590, so the checked-in implementation keeps the 2/6 Auto budget.
+
 ## Tests
 
 ```bash

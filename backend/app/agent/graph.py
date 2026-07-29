@@ -133,6 +133,7 @@ def prepare_agentic_answer(
     top_k: int = 5,
     conversation_history: list[dict] | None = None,
     max_retrieval_rounds: int = 3,
+    max_total_retrieval_calls: int = 8,
     enable_web_search: bool = False,
     initial_is_complex: bool | None = None,
     initial_sub_queries: list[str] | None = None,
@@ -142,7 +143,13 @@ def prepare_agentic_answer(
 
     _logger.info("========== Agentic RAG 开始 ==========")
     _logger.info("问题: %s", question)
-    _logger.info("配置: top_k=%d, max_rounds=%d, web_search=%s", top_k, max_retrieval_rounds, enable_web_search)
+    _logger.info(
+        "配置: top_k=%d, max_rounds=%d, max_total_calls=%d, web_search=%s",
+        top_k,
+        max_retrieval_rounds,
+        max_total_retrieval_calls,
+        enable_web_search,
+    )
 
     graph = build_agentic_graph(skip_analysis=initial_is_complex is not None)
 
@@ -152,7 +159,7 @@ def prepare_agentic_answer(
         conversation_history=conversation_history or [],
         top_k=top_k,
         max_rounds=min(max(max_retrieval_rounds, 1), 3),
-        max_total_retrieval_calls=8,
+        max_total_retrieval_calls=min(max(max_total_retrieval_calls, 1), 8),
         enable_web_search=enable_web_search,
         is_complex=initial_is_complex or False,
         sub_queries=initial_sub_queries or [],
