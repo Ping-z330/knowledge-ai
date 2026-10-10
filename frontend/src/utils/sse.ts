@@ -1,6 +1,8 @@
 /** SSE 流式请求公用模块。封装 fetch → ReadableStream → 逐行解析，
  *  调用方只需 `for await` 迭代事件，无需关心底层流处理细节。
  */
+import router from '../router'
+import { clearToken } from './authStorage'
 
 export interface SSEEvent {
   type: string
@@ -22,6 +24,14 @@ export async function* streamSSE(
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      clearToken()
+      router.replace({
+        path: '/login',
+        query: { redirect: router.currentRoute.value.fullPath },
+      })
+      throw new Error('登录已过期，请重新登录')
+    }
     const errorBody = await response.json().catch(() => null)
     throw new Error(errorBody?.detail || `HTTP ${response.status}`)
   }

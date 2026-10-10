@@ -8,3 +8,6 @@ backend/.venv/
 backend/data/
 backend/backend/
 frontend/test-results/
+.archify/
+.trae/
+backend/eval/results/

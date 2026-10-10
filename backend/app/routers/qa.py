@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
-from ..auth import require_api_token
+from ..auth import require_auth
 from ..database import connection_scope
 from ..repositories.knowledge_bases import KnowledgeBaseRepository
 from ..repositories.question_answers import QuestionAnswerRepository
@@ -23,7 +23,7 @@ from ..services.retrieval import RetrievalError, retrieve_chunks
 router = APIRouter(
     prefix="/api/knowledge-bases",
     tags=["qa"],
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_auth)],
 )
 
 
@@ -139,6 +139,27 @@ def answer_from_knowledge_base_stream(
         raise HTTPException(status_code=500, detail="Failed to prepare answer") from exc
 
     sources_data = [_source_to_dict(s) for s in prepared.sources]
+    logger = logging.getLogger(__name__)
+
+    def _persist(parts: list[str]) -> str:
+        """把已生成答案写入 DB，返回 answer_id；失败返回空串。"""
+        full_answer = "".join(parts)
+        if not full_answer:
+            return ""
+        try:
+            with connection_scope() as connection:
+                created = QuestionAnswerRepository(connection).create(
+                    knowledge_base_id=knowledge_base_id,
+                    question=payload.question,
+                    answer=full_answer,
+                    sources=sources_data,
+                    top_k=payload.top_k,
+                    conversation_id=payload.conversation_id,
+                )
+                return created["id"]
+        except Exception:
+            logger.exception("Failed to persist streamed answer")
+            return ""
 
     def sse_events():
         trace = prepared.retrieval_trace
@@ -151,25 +172,13 @@ def answer_from_knowledge_base_stream(
                 full_answer_parts.append(token)
                 yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
         except Exception:
+            # 流中断：仍然持久化已生成的部分答案，避免用户已看到的内容丢失
+            answer_id = _persist(full_answer_parts)
             yield f"data: {json.dumps({'type': 'error', 'message': 'Stream interrupted'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'answer_id': answer_id})}\n\n"
             return
 
-        full_answer = "".join(full_answer_parts)
-        answer_id = ""
-        try:
-            with connection_scope() as connection:
-                created = QuestionAnswerRepository(connection).create(
-                    knowledge_base_id=knowledge_base_id,
-                    question=payload.question,
-                    answer=full_answer,
-                    sources=sources_data,
-                    top_k=payload.top_k,
-                    conversation_id=payload.conversation_id,
-                )
-                answer_id = created["id"]
-        except Exception:
-            logging.getLogger(__name__).exception("Failed to persist streamed answer")
-
+        answer_id = _persist(full_answer_parts)
         yield f"data: {json.dumps({'type': 'done', 'answer_id': answer_id})}\n\n"
 
     return StreamingResponse(

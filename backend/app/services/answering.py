@@ -7,6 +7,46 @@ from .retrieval import RetrievedChunk, RetrievalError, retrieve_chunks
 
 NO_CONTEXT_ANSWER = "无法从当前知识库确认该问题的答案。"
 
+# L2 会话摘要压缩:超过此阈值时触发摘要,保留最近 RECENT_KEEP 条原文
+HISTORY_SUMMARIZE_THRESHOLD = 8
+RECENT_KEEP = 4
+
+
+def _summarize_history(messages: list[dict]) -> str:
+    """用 LLM 将早期对话消息压缩成一段摘要。失败时回退为截断拼接。"""
+    provider = OpenAICompatibleLLMProvider.from_settings()
+    transcript = "\n".join(
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+        for m in messages
+    )
+    system = (
+        "You are a conversation summarizer. Summarize the following dialogue "
+        "into a concise paragraph preserving key facts, decisions, and "
+        "context needed for follow-up questions. Keep it under 200 words."
+    )
+    try:
+        return provider.answer(system_prompt=system, user_prompt=transcript)
+    except LLMError:
+        # 回退:取每条消息前 50 字符拼接
+        return " | ".join(
+            f"{m['role']}: {m['content'][:50]}..." for m in messages
+        )
+
+
+def _compress_history(history: list[dict]) -> tuple[str | None, list[dict]]:
+    """超过阈值时压缩早期对话,返回 (摘要, 近期原文)。
+
+    Returns:
+        summary: 早期对话的 LLM 摘要,None 表示无需压缩
+        recent:  保留的近期原文消息
+    """
+    if len(history) <= HISTORY_SUMMARIZE_THRESHOLD:
+        return None, history
+    early = history[:-RECENT_KEEP]
+    recent = history[-RECENT_KEEP:]
+    summary = _summarize_history(early)
+    return summary, recent
+
 
 class AnsweringError(Exception):
     """Raised when an answer cannot be generated."""
@@ -187,11 +227,15 @@ def _user_prompt(
     parts: list[str] = []
 
     if history:
-        parts.append("Conversation history:")
-        for msg in history:
-            role_label = "User" if msg["role"] == "user" else "Assistant"
-            parts.append(f"{role_label}: {msg['content']}")
-        parts.append("")
+        summary, recent = _compress_history(history)
+        if summary:
+            parts.append(f"Earlier conversation summary:\n{summary}\n")
+        if recent:
+            parts.append("Recent conversation:")
+            for msg in recent:
+                role_label = "User" if msg["role"] == "user" else "Assistant"
+                parts.append(f"{role_label}: {msg['content']}")
+            parts.append("")
 
     parts.append(f"Question:\n{question}")
     parts.append(f"Context:\n{context_blocks}")
@@ -220,11 +264,15 @@ def _prepared_user_prompt(prepared: PreparedAnswer) -> str:
 
     parts: list[str] = []
     if prepared.conversation_history:
-        parts.append("Conversation history:")
-        for message in prepared.conversation_history:
-            role_label = "User" if message["role"] == "user" else "Assistant"
-            parts.append(f"{role_label}: {message['content']}")
-        parts.append("")
+        summary, recent = _compress_history(prepared.conversation_history)
+        if summary:
+            parts.append(f"Earlier conversation summary:\n{summary}\n")
+        if recent:
+            parts.append("Recent conversation:")
+            for message in recent:
+                role_label = "User" if message["role"] == "user" else "Assistant"
+                parts.append(f"{role_label}: {message['content']}")
+            parts.append("")
     parts.append(f"Question:\n{prepared.question}")
     parts.append(f"Context:\n{context_blocks}")
     parts.append(

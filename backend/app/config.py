@@ -1,37 +1,63 @@
-# 环境变量配置和加载
+"""环境变量配置和加载。
+
+使用 pydantic-settings 从环境变量和 .env 文件自动加载配置。
+优先级：环境变量 > .env 文件 > 默认值；项目根 .env 优先于后端目录 .env。
+"""
 
 from functools import lru_cache
 from pathlib import Path
-from dotenv import load_dotenv
-from pydantic import BaseModel
-import os
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 定义项目目录和后端目录
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 PROJECT_DIR = BACKEND_DIR.parent
 
-# 加载环境变量，优先级：项目根目录 > 后端目录
-load_dotenv(PROJECT_DIR / ".env", override=False)
-load_dotenv(BACKEND_DIR / ".env", override=False)
+
+# 默认数据库 URL，位于后端目录下的 data/knowledge_agent.db
+def _default_database_url() -> str:
+    return f"sqlite:///{BACKEND_DIR / 'data' / 'knowledge_agent.db'}"
 
 
-# 定义配置类
-class Settings(BaseModel):
+# 默认存储目录，位于后端目录下的 data/uploads
+def _default_storage_dir() -> Path:
+    return BACKEND_DIR / "data" / "uploads"
+
+
+# 默认 Chroma 目录，位于后端目录下的 data/chroma
+def _default_chroma_dir() -> Path:
+    return BACKEND_DIR / "data" / "chroma"
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        # 后端目录 .env 先加载，项目根 .env 后加载覆盖（项目根优先）
+        env_file=(BACKEND_DIR / ".env", PROJECT_DIR / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     app_name: str = "Knowledge Agent API"
     api_token: str = ""
+    # Auth — single admin user, JWT-based UI auth
+    admin_username: str = "admin"
+    admin_password: str = ""
+    jwt_secret: str = ""
+    jwt_expire_hours: int = 24
     cors_origins: str = "*"
     log_json: bool = False
-    database_url: str
-    storage_dir: Path
-    chroma_dir: Path
+    database_url: str = _default_database_url()
+    storage_dir: Path = _default_storage_dir()
+    chroma_dir: Path = _default_chroma_dir()
     max_upload_bytes: int = 50 * 1024 * 1024
     embedding_batch_size: int = 20
-    embedding_base_url: str
-    embedding_api_key: str
-    embedding_model: str
-    llm_base_url: str
-    llm_api_key: str
-    llm_model: str
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = ""
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = ""
     # Agentic RAG
     agentic_enabled: bool = True
     agentic_max_retrieval_rounds: int = 3
@@ -42,69 +68,20 @@ class Settings(BaseModel):
     cross_encoder_model: str = "BAAI/bge-reranker-v2-m3"
     siliconflow_api_key: str = ""
     siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
+    # Rate limiting
+    rate_limit_requests: int = 60
+    rate_limit_window: float = 60.0
+
+    @field_validator("storage_dir", "chroma_dir", mode="after")
+    @classmethod
+    def _resolve_relative_path(cls, v: Path) -> Path:
+        """相对路径基于项目目录解析为绝对路径。"""
+        if not v.is_absolute():
+            return PROJECT_DIR / v
+        return v
 
 
-# 定义默认数据库URL、默认存储目录和默认Chroma目录的函数
-def _default_database_url() -> str:
-    return f"sqlite:///{BACKEND_DIR / 'data' / 'knowledge_agent.db'}"
-
-# _default_storage_dir函数返回默认的存储目录路径，位于后端目录下的data/uploads文件夹中。
-def _default_storage_dir() -> Path:
-    return BACKEND_DIR / "data" / "uploads"
-
-
-# _default_chroma_dir函数返回默认的Chroma目录路径，位于后端目录下的data/chroma文件夹中。
-def _default_chroma_dir() -> Path:
-    return BACKEND_DIR / "data" / "chroma"
-
-
-# _env_path函数用于获取环境变量指定的路径，如果环境变量不存在或为空，则返回默认路径。
-# 如果环境变量指定的路径是相对路径，则将其转换为绝对路径，基于项目目录。
-def _env_path(name: str, default: Path) -> Path:
-    value = os.getenv(name)
-    if not value:
-        return default
-
-    path = Path(value)
-    if path.is_absolute():
-        return path
-    return PROJECT_DIR / path
-
-
-# get_settings函数使用lru_cache装饰器来缓存结果，避免重复加载环境变量和创建Settings实例
 @lru_cache
 def get_settings() -> Settings:
-    return Settings(
-        api_token=os.getenv("API_TOKEN", ""),
-        cors_origins=os.getenv("CORS_ORIGINS", "*"),
-        log_json=os.getenv("LOG_JSON", "").lower() in ("1", "true", "yes"),
-        database_url=os.getenv("DATABASE_URL", _default_database_url()),
-        storage_dir=_env_path("STORAGE_DIR", _default_storage_dir()),
-        chroma_dir=_env_path("CHROMA_DIR", _default_chroma_dir()),
-        max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(50 * 1024 * 1024))),
-        embedding_batch_size=int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
-        embedding_base_url=os.getenv("EMBEDDING_BASE_URL", ""),
-        embedding_api_key=os.getenv("EMBEDDING_API_KEY", ""),
-        embedding_model=os.getenv("EMBEDDING_MODEL", ""),
-        llm_base_url=os.getenv("LLM_BASE_URL", ""),
-        llm_api_key=os.getenv("LLM_API_KEY", ""),
-        llm_model=os.getenv("LLM_MODEL", ""),
-        agentic_enabled=os.getenv("AGENTIC_ENABLED", "true").lower()
-        in ("1", "true", "yes"),
-        agentic_max_retrieval_rounds=int(
-            os.getenv("AGENTIC_MAX_RETRIEVAL_ROUNDS", "3")
-        ),
-        agentic_web_search_provider=os.getenv(
-            "AGENTIC_WEB_SEARCH_PROVIDER", "duckduckgo"
-        ),
-        cross_encoder_enabled=os.getenv("CROSS_ENCODER_ENABLED", "false").lower()
-        in ("1", "true", "yes"),
-        cross_encoder_provider=os.getenv("CROSS_ENCODER_PROVIDER", "siliconflow"),
-        cross_encoder_model=os.getenv(
-            "CROSS_ENCODER_MODEL", "BAAI/bge-reranker-v2-m3"
-        ),
-        siliconflow_api_key=os.getenv("SILICONFLOW_API_KEY", ""),
-        siliconflow_base_url=os.getenv(
-            "SILICONFLOW_BASE_URL", "https://api.siliconflow.cn/v1"
-        ),
-    )
+    """缓存 Settings 单例，避免重复加载环境变量。"""
+    return Settings()

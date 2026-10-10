@@ -158,6 +158,7 @@ export function useDocuments(selectedKnowledgeBaseId: Ref<string>) {
     busyId.value = item.id
     try {
       await api.delete(`/knowledge-bases/${item.knowledge_base_id}/documents/${item.id}`)
+      message.success(`已删除文档「${item.filename}」`)
       await load()
     } finally {
       busyId.value = ''

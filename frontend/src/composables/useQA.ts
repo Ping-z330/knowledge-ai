@@ -1,6 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
 import type { AnswerSource, QuestionAnswer, QuestionResponse, RagStrategy, RetrievalResult, SubQueryTrace } from '../types'
 import { api, extractApiError } from '../utils/api'
+import { getToken } from '../utils/authStorage'
 import { streamSSE } from '../utils/sse'
 
 export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<number>) {
@@ -119,7 +120,7 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
     agenticSubQueryTraces.value = []
     strategyUsed.value = ''
     try {
-      const token: string | undefined = import.meta.env.VITE_API_TOKEN
+      const token: string | null = getToken()
       const body: Record<string, unknown> = {
         question: question.value.trim(),
         top_k: topK.value,
@@ -132,7 +133,7 @@ export function useQA(selectedKnowledgeBaseId: Ref<string>, indexedCount: Ref<nu
       for await (const event of streamSSE(
         `/api/knowledge-bases/${selectedKnowledgeBaseId.value}/questions/stream`,
         body,
-        token,
+        token ?? undefined,
       )) {
         if (event.type === 'status') {
           strategyUsed.value = event.strategy as 'standard' | 'agentic'

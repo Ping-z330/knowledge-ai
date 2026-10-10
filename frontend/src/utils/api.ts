@@ -1,17 +1,32 @@
 import axios from 'axios'
+import router from '../router'
+import { clearToken, getToken } from './authStorage'
 
 export const api = axios.create({
   baseURL: '/api',
   timeout: 120000,
-  headers: import.meta.env.VITE_API_TOKEN
-    ? { Authorization: `Bearer ${import.meta.env.VITE_API_TOKEN}` }
-    : {},
 })
 
-// Global error interceptor — dispatches custom event for ErrorToast
+// 动态注入 JWT（每次请求从 localStorage 读取最新 token）
+api.interceptors.request.use((config) => {
+  const token = getToken()
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// 401 → 清除 token 并重定向到登录页；其它错误走全局 ErrorToast
 api.interceptors.response.use(
   (res) => res,
   (error) => {
+    const status = error.response?.status
+    if (status === 401) {
+      clearToken()
+      const redirect = router.currentRoute.value.fullPath
+      if (router.currentRoute.value.path !== '/login') {
+        router.replace({ path: '/login', query: redirect ? { redirect } : {} })
+      }
+      return Promise.reject(error)
+    }
     const detail = extractApiError(error)
     window.dispatchEvent(new CustomEvent('app-error', { detail }))
     return Promise.reject(error)

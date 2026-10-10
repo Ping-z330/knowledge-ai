@@ -160,6 +160,7 @@ def init_db() -> None:
         )
 
         # 兼容已有数据库：添加 rating 列
+        # 作用：存储用户对回答的评分
         try:
             connection.execute(
                 "ALTER TABLE question_answers ADD COLUMN rating INTEGER"
@@ -168,6 +169,7 @@ def init_db() -> None:
             pass
 
         # 兼容已有数据库：添加 conversation_id 列
+        # 作用：存储对话 ID
         try:
             connection.execute(
                 "ALTER TABLE question_answers ADD COLUMN conversation_id TEXT"
@@ -175,6 +177,7 @@ def init_db() -> None:
         except Exception:
             pass
         # 为 conversation_id 创建索引（新老数据库都需要）
+        # 作用：加速基于对话 ID 的查询
         try:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_question_answers_conversation_id "

@@ -137,3 +137,21 @@ class QuestionAnswerRead(BaseModel):
 
 class RatingUpdate(BaseModel):
     rating: int = Field(ge=-1, le=1)
+
+
+# ── 认证 ──────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=120)
+    password: str = Field(min_length=1, max_length=200)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int  # 秒
+
+
+class AuthUser(BaseModel):
+    username: str
+    auth_method: str  # "jwt" | "api-token"

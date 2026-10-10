@@ -37,7 +37,7 @@ class _JsonFormatter(logging.Formatter):
             payload["exception"] = str(record.exc_info[1])
         return json.dumps(payload, ensure_ascii=False)
 
-
+# 日志配置函数
 def setup_logging(*, level: int = logging.INFO, json_format: bool = False) -> None:
     """配置根日志记录器。
 

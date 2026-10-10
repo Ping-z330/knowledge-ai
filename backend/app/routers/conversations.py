@@ -5,14 +5,14 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from ..auth import require_api_token
+from ..auth import require_auth
 from ..database import connection_scope
 from ..repositories.question_answers import QuestionAnswerRepository
 
 router = APIRouter(
     prefix="/api/knowledge-bases",
     tags=["conversations"],
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_auth)],
 )
 
 

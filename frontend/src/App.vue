@@ -10,6 +10,9 @@ const route = useRoute()
 const router = useRouter()
 const kb = useKnowledgeBases()
 
+// 登录页等 public 路由绕过 shell，不加载侧栏
+const isPublic = computed(() => !!route.meta.public)
+
 // 侧栏高亮从 URL 读取，不依赖 composable 内部状态
 const selectedId = computed(() => (route.params.kbId as string) || '')
 
@@ -34,7 +37,10 @@ const removeKb = async (item: KnowledgeBase) => {
   }
 }
 
-onMounted(() => kb.load())
+// 未登录时不加载知识库列表，避免连环 401
+onMounted(() => {
+  if (!isPublic.value) kb.load()
+})
 </script>
 
 <template>
@@ -48,7 +54,10 @@ onMounted(() => kb.load())
     }"
   >
     <ErrorToast />
-    <main class="shell">
+    <main v-if="isPublic" class="public-view">
+      <router-view />
+    </main>
+    <main v-else class="shell">
       <Sidebar
         :knowledgeBases="kb.knowledgeBases.value"
         :filtered="kb.filtered.value"
@@ -69,3 +78,13 @@ onMounted(() => kb.load())
     </main>
   </a-config-provider>
 </template>
+
+<style scoped>
+.public-view {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f2f5;
+}
+</style>

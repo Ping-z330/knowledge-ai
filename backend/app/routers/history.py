@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
-from ..auth import require_api_token
+from ..auth import require_auth
 from ..database import connection_scope
 from ..repositories.knowledge_bases import KnowledgeBaseRepository
 from ..repositories.question_answers import QuestionAnswerRepository
@@ -15,7 +15,7 @@ from ..schemas import (
 router = APIRouter(
     prefix="/api/knowledge-bases",
     tags=["history"],
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_auth)],
 )
 
 

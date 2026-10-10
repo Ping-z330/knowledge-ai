@@ -56,6 +56,21 @@ test.describe('Knowledge Agent — Smoke Tests', () => {
     await expect(page.locator('.history-block')).toBeVisible()
   })
 
+  test('enter does not insert newline and shift-enter does', async ({ page }) => {
+    await page.goto('/')
+    await page.locator('.section-line-actions .ant-btn').first().click()
+    await page.locator('.ant-modal input').fill(`Keyboard-${Date.now()}`)
+    await page.locator('.ant-modal .ant-btn-primary').click()
+
+    const textarea = page.locator('.conv-input-row textarea')
+    await textarea.fill('hello')
+    await textarea.press('Enter')
+    await expect(textarea).toHaveValue('hello')
+
+    await textarea.press('Shift+Enter')
+    await expect(textarea).toHaveValue('hello\n')
+  })
+
   test('navigate to documents page', async ({ page }) => {
     await page.goto('/')
     const kbItem = page.locator('.kb-item').first()

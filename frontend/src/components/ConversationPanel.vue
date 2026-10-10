@@ -59,6 +59,12 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
     await api.patch(`/knowledge-bases/${kbId}/question-answers/${answerId}/rating`, { rating })
   } catch { /* ignore */ }
 }
+
+const handleEnter = (event: KeyboardEvent) => {
+  if (event.shiftKey || event.isComposing) return
+  event.preventDefault()
+  emit('ask')
+}
 </script>
 
 <template>
@@ -144,7 +150,7 @@ const submitRating = async (answerId: string, rating: number, kbId: string) => {
         <a-textarea
           :value="input" :rows="2" placeholder="输入问题…" :disabled="asking"
           @update:value="emit('update:input', $event)"
-          @pressEnter="emit('ask')"
+          @keydown.enter="handleEnter"
         />
         <a-button type="primary" :loading="asking"
           :disabled="!selectedKnowledgeBaseId || !input.trim() || indexedCount === 0"

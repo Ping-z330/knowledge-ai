@@ -5,7 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 
-from ..auth import require_api_token
+from ..auth import require_auth
 from ..database import connection_scope
 from ..dependencies import get_tq
 from ..repositories.chunks import ChunkRepository
@@ -31,7 +31,7 @@ from ..task_queue import TASK_INDEX, TASK_PARSE
 router = APIRouter(
     prefix="/api/knowledge-bases",
     tags=["documents"],
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_auth)],
 )
 
 # ── 后台任务处理器 ──────────────────────────────────────────────
@@ -179,29 +179,41 @@ def upload_document(
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def delete_document(knowledge_base_id: str, document_id: str) -> Response:
+    # 先删 DB（source of truth），成功后再清理外部存储；
+    # 外部清理失败降级为 warning，避免出现"DB 还在但向量已没"的不一致状态。
     with connection_scope() as connection:
         document_repository = DocumentRepository(connection)
         existing = document_repository.get(document_id)
         if existing is None or existing["knowledge_base_id"] != knowledge_base_id:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        try:
-            delete_document_vectors(
-                knowledge_base_id=knowledge_base_id,
-                document_id=document_id,
-            )
-        except IndexingError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-        invalidate_keyword_index(knowledge_base_id=knowledge_base_id)
-
         deleted = document_repository.delete(knowledge_base_id, document_id)
         if deleted is None:
             raise HTTPException(status_code=404, detail="Document not found")
 
     storage_path = Path(deleted["storage_path"])
+    logger = logging.getLogger(__name__)
+
+    try:
+        delete_document_vectors(
+            knowledge_base_id=knowledge_base_id,
+            document_id=document_id,
+        )
+    except IndexingError:
+        logger.warning("Failed to delete vectors for document %s", document_id)
+
+    try:
+        invalidate_keyword_index(knowledge_base_id=knowledge_base_id)
+    except Exception:
+        logger.warning(
+            "Failed to invalidate keyword index for kb %s", knowledge_base_id
+        )
+
     if storage_path.exists():
-        storage_path.unlink()
+        try:
+            storage_path.unlink()
+        except OSError:
+            logger.warning("Failed to delete file %s", storage_path)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

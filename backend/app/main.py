@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -10,10 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .database import connection_scope, init_db
 from .logging_config import request_id_var, setup_logging
-from .routers import documents, history, knowledge_bases, qa
+from .routers import auth, documents, history, knowledge_bases, qa
 from .dependencies import get_tq
 from .task_queue import TASK_INDEX, TASK_PARSE
 
+# 初始化日志记录器
 _logger = logging.getLogger(__name__)
 
 
@@ -105,13 +105,15 @@ def _recover_stuck_documents() -> None:
             task_failed,
         )
 
-
+# lifespan函数用于在应用启动和关闭时执行初始化和清理操作
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     setup_logging(json_format=settings.log_json)
     _logger.info("Starting Knowledge Agent backend")
+    # 初始化数据库
     init_db()
+    # 恢复卡住的文档和任务状态
     _recover_stuck_documents()
 
     # 设置关键词索引持久化目录
@@ -137,7 +139,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     tq.stop()
     _logger.info("Shutting down Knowledge Agent backend")
 
-
+# 创建 FastAPI 应用实例，并配置 CORS、请求限流、中间件和路由。
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
@@ -161,9 +163,11 @@ def create_app() -> FastAPI:
     # 使用纯 ASGI middleware 避免 BaseHTTPMiddleware 与 StreamingResponse 的兼容问题
     from .rate_limit import RateLimiter
 
-    rate_limit_req = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
-    rate_limit_win = float(os.getenv("RATE_LIMIT_WINDOW", "60"))
-    _limiter = RateLimiter(max_requests=rate_limit_req, window_seconds=rate_limit_win)
+    _settings = get_settings()
+    _limiter = RateLimiter(
+        max_requests=_settings.rate_limit_requests,
+        window_seconds=_settings.rate_limit_window,
+    )
     _skip_paths = {"/health", "/"}
 
     @app.middleware("http")
@@ -202,6 +206,7 @@ def create_app() -> FastAPI:
             )
         return await call_next(request)
 
+    app.include_router(auth.router)
     app.include_router(knowledge_bases.router)
     app.include_router(documents.router)
     app.include_router(qa.router)
